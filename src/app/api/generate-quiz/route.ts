@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { QuizQuestion } from '@/lib/types';
+
+// Initialize Google Generative AI with API key from environment
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
 const sampleQuestions: QuizQuestion[] = [
   {
@@ -80,11 +83,66 @@ const sampleQuestions: QuizQuestion[] = [
 ];
 
 /**
+ * Helper: Extract base64 data from a data URL or raw base64 string
+ */
+function extractBase64(image: string): { mimeType: string; data: string } {
+  if (image.startsWith('data:')) {
+    const [header, data] = image.split(',');
+    const mimeType = header.match(/data:(.*?);/)?.[1] || 'image/png';
+    return { mimeType, data };
+  }
+  return { mimeType: 'image/png', data: image };
+}
+
+/**
+ * Helper: Parse JSON from AI response (handles markdown code blocks)
+ */
+function parseJSONResponse(content: string): unknown {
+  let jsonStr = content.trim();
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+  const objMatch = jsonStr.match(/\{[\s\S]*\}/);
+  const arrMatch = jsonStr.match(/\[[\s\S]*\]/);
+  if (objMatch && arrMatch) {
+    // Return whichever comes first
+    jsonStr = objMatch.index! < arrMatch.index! ? objMatch[0] : arrMatch[0];
+  } else if (objMatch) {
+    jsonStr = objMatch[0];
+  } else if (arrMatch) {
+    jsonStr = arrMatch[0];
+  }
+  return JSON.parse(jsonStr);
+}
+
+/**
+ * Call Gemma 4 multimodal model with text + image
+ */
+async function callGemma4(prompt: string, image: string): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: 'gemma-4' });
+  const { mimeType, data } = extractBase64(image);
+
+  const result = await model.generateContent([
+    prompt,
+    {
+      inlineData: {
+        mimeType,
+        data,
+      },
+    },
+  ]);
+
+  const response = result.response;
+  const text = response.text();
+  if (!text) throw new Error('Empty response from Gemma 4');
+  return text;
+}
+
+/**
  * STEP 1: analyze_content()
  * Uses Gemma 4 multimodal vision to extract key concepts, topics,
  * and learning objectives from the textbook page image.
  */
-async function analyzeContent(zai: Awaited<ReturnType<typeof ZAI.create>>, image: string, language: string) {
+async function analyzeContent(image: string, language: string) {
   const prompt = `You are an expert educational content analyzer. I will show you an image of a textbook page.
 
 Your task is to perform a thorough content analysis. Extract and return a JSON object with these fields:
@@ -101,28 +159,8 @@ Respond in ${language} for topics and concepts, but keep JSON keys in English.
 
 Return ONLY valid JSON with NO markdown, NO code blocks, NO backticks.`;
 
-  const response = await zai.chat.completions.createVision({
-    model: 'gemma-4',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: image } },
-      ],
-    }],
-    thinking: { type: 'disabled' },
-  });
-
-  const content = response.choices?.[0]?.message?.content;
-  if (!content) throw new Error('No content in analyze_content response');
-
-  let jsonStr = content.trim();
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
-  const objMatch = jsonStr.match(/\{[\s\S]*\}/);
-  if (objMatch) jsonStr = objMatch[0];
-
-  return JSON.parse(jsonStr);
+  const content = await callGemma4(prompt, image);
+  return parseJSONResponse(content) as Record<string, unknown>;
 }
 
 /**
@@ -131,7 +169,6 @@ Return ONLY valid JSON with NO markdown, NO code blocks, NO backticks.`;
  * Each question includes an explicit difficulty rating for adaptive engine use.
  */
 async function generateQuestions(
-  zai: Awaited<ReturnType<typeof ZAI.create>>,
   image: string,
   contentAnalysis: Record<string, unknown>,
   difficulty: string,
@@ -183,28 +220,8 @@ Each question object must have this structure:
 The correctAnswer for MCQ must be the 0-based index of the correct option.
 Start IDs from 1 and increment.`;
 
-  const response = await zai.chat.completions.createVision({
-    model: 'gemma-4',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: image } },
-      ],
-    }],
-    thinking: { type: 'disabled' },
-  });
-
-  const content = response.choices?.[0]?.message?.content;
-  if (!content) throw new Error('No content in generate_question response');
-
-  let jsonStr = content.trim();
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
-  const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
-  if (arrayMatch) jsonStr = arrayMatch[0];
-
-  return JSON.parse(jsonStr);
+  const content = await callGemma4(prompt, image);
+  return parseJSONResponse(content) as QuizQuestion[];
 }
 
 /**
@@ -213,7 +230,6 @@ Start IDs from 1 and increment.`;
  * to ensure they are answerable and grounded in the material.
  */
 async function validateQuestions(
-  zai: Awaited<ReturnType<typeof ZAI.create>>,
   image: string,
   questions: QuizQuestion[],
   contentAnalysis: Record<string, unknown>
@@ -235,28 +251,8 @@ Validate each question. Return a JSON array of objects with:
 Be strict but fair. A question is valid if a student who read the page could reasonably answer it.
 Return ONLY valid JSON array with NO markdown, NO code blocks, NO backticks.`;
 
-  const response = await zai.chat.completions.createVision({
-    model: 'gemma-4',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: image } },
-      ],
-    }],
-    thinking: { type: 'disabled' },
-  });
-
-  const content = response.choices?.[0]?.message?.content;
-  if (!content) throw new Error('No content in validate_question response');
-
-  let jsonStr = content.trim();
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
-  const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
-  if (arrayMatch) jsonStr = arrayMatch[0];
-
-  return JSON.parse(jsonStr);
+  const content = await callGemma4(prompt, image);
+  return parseJSONResponse(content) as { id: number; isValid: boolean; issues: string[]; suggestedFix: string }[];
 }
 
 export async function POST(request: NextRequest) {
@@ -271,19 +267,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Track pipeline stage for response metadata
+    if (!process.env.GOOGLE_AI_API_KEY) {
+      console.warn('GOOGLE_AI_API_KEY not set, using sample fallback');
+      const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
+      return NextResponse.json({
+        questions: shuffled.slice(0, numQuestions),
+        pipeline: {
+          stages: ['analyze_content', 'generate_question', 'validate_question'],
+          error: 'API key not configured',
+          usedFallback: true,
+        },
+      });
+    }
+
     let pipelineStage = 'init';
     let contentAnalysis: Record<string, unknown> | null = null;
 
     try {
-      const zai = await ZAI.create();
-
       // ============================================================
       // STEP 1: analyze_content() — Extract key concepts from image
       // ============================================================
       pipelineStage = 'analyze_content';
       console.log('[Pipeline] Step 1: analyze_content() — Extracting key concepts from image...');
-      contentAnalysis = await analyzeContent(zai, image, language);
+      contentAnalysis = await analyzeContent(image, language);
       console.log('[Pipeline] Step 1 complete. Topics:', (contentAnalysis.topics as string[])?.join(', '));
 
       // ============================================================
@@ -292,7 +298,7 @@ export async function POST(request: NextRequest) {
       pipelineStage = 'generate_question';
       console.log('[Pipeline] Step 2: generate_question() — Creating quiz questions...');
       let questions: QuizQuestion[] = await generateQuestions(
-        zai, image, contentAnalysis, difficulty, numQuestions, questionTypes, language
+        image, contentAnalysis, difficulty, numQuestions, questionTypes, language
       );
       console.log(`[Pipeline] Step 2 complete. Generated ${questions.length} questions.`);
 
@@ -305,11 +311,11 @@ export async function POST(request: NextRequest) {
       // ============================================================
       pipelineStage = 'validate_question';
       console.log('[Pipeline] Step 3: validate_question() — Validating questions against source...');
-      const validationResults = await validateQuestions(zai, image, questions, contentAnalysis);
+      const validationResults = await validateQuestions(image, questions, contentAnalysis);
 
-      // Filter out invalid questions, keeping only valid ones
+      // Filter out invalid questions
       const validQuestions = questions.filter((q) => {
-        const validation = validationResults.find((v: { id: number }) => v.id === q.id);
+        const validation = validationResults.find((v) => v.id === q.id);
         return validation?.isValid !== false;
       });
 
@@ -337,7 +343,6 @@ export async function POST(request: NextRequest) {
       });
     } catch (aiError) {
       console.error(`AI pipeline error at stage '${pipelineStage}':`, aiError);
-      // Fallback to sample data
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
       const sliced = shuffled.slice(0, numQuestions);
       return NextResponse.json({
