@@ -95,91 +95,201 @@ function extractBase64(image: string): { mimeType: string; data: string } {
 }
 
 /**
- * Helper: Parse JSON from AI response (handles markdown code blocks)
+ * Robust JSON parser that handles AI model output quirks.
+ * Tries multiple strategies to extract valid JSON.
  */
-function parseJSONResponse(content: string): unknown {
-  let jsonStr = content.trim();
-  // Remove markdown code blocks
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
-  // Try to find JSON object or array
-  const objMatch = jsonStr.match(/\{[\s\S]*\}/);
-  const arrMatch = jsonStr.match(/\[[\s\S]*\]/);
-  if (objMatch && arrMatch) {
-    jsonStr = objMatch.index! < arrMatch.index! ? objMatch[0] : arrMatch[0];
-  } else if (objMatch) {
-    jsonStr = objMatch[0];
-  } else if (arrMatch) {
-    jsonStr = arrMatch[0];
+function parseJSONResponse(rawContent: string, stageName: string): unknown {
+  if (!rawContent || rawContent.trim().length === 0) {
+    throw new Error(`Empty response from ${stageName}`);
   }
-  // Clean up common issues: trailing commas, control characters
-  jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
-  jsonStr = jsonStr.replace(/[\x00-\x1F]/g, '');
+
+  let jsonStr = rawContent.trim();
+
+  // Log raw response for debugging (first 300 chars)
+  console.log(`[${stageName}] Raw response (${jsonStr.length} chars):`, jsonStr.substring(0, 300));
+
+  // Strategy 1: Try direct JSON.parse (works when responseMimeType is set)
   try {
     return JSON.parse(jsonStr);
   } catch {
-    // Last resort: try to extract with a more lenient approach
-    const firstBrace = jsonStr.indexOf('{');
-    const firstBracket = jsonStr.indexOf('[');
-    let start = -1;
-    let end = -1;
-    if (firstBrace !== -1 || firstBracket !== -1) {
-      start = firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)
-        ? firstBrace : firstBracket;
-      const openChar = jsonStr[start];
-      const closeChar = openChar === '{' ? '}' : ']';
-      let depth = 0;
-      for (let i = start; i < jsonStr.length; i++) {
-        if (jsonStr[i] === openChar) depth++;
-        if (jsonStr[i] === closeChar) depth--;
-        if (depth === 0) { end = i + 1; break; }
-      }
+    // Continue to next strategy
+  }
+
+  // Strategy 2: Remove markdown code blocks (```json ... ```)
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch {
+      // Continue
     }
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(jsonStr.substring(start, end));
+  }
+
+  // Strategy 3: Extract first complete JSON object using balanced brace matching
+  const firstBrace = jsonStr.indexOf('{');
+  const firstBracket = jsonStr.indexOf('[');
+
+  if (firstBrace === -1 && firstBracket === -1) {
+    throw new Error(`No JSON found in ${stageName} response. Raw: ${jsonStr.substring(0, 200)}`);
+  }
+
+  // Determine which starts first
+  const startIdx = firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)
+    ? firstBrace
+    : firstBracket;
+  const openChar = jsonStr[startIdx];
+  const closeChar = openChar === '{' ? '}' : ']';
+
+  // Balanced matching to find the complete JSON structure
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let endIdx = -1;
+
+  for (let i = startIdx; i < jsonStr.length; i++) {
+    const ch = jsonStr[i];
+    if (escaped) {
+      escaped = false;
+      continue;
     }
-    throw new Error(`Could not parse JSON from response: ${jsonStr.substring(0, 100)}...`);
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === openChar) depth++;
+    if (ch === closeChar) depth--;
+    if (depth === 0) {
+      endIdx = i + 1;
+      break;
+    }
+  }
+
+  if (endIdx === -1) {
+    throw new Error(`Incomplete JSON in ${stageName} response. Raw: ${jsonStr.substring(0, 200)}`);
+  }
+
+  const extracted = jsonStr.substring(startIdx, endIdx);
+
+  // Clean common issues: trailing commas before } or ]
+  const cleaned = extracted.replace(/,\s*([\]}])/g, '$1');
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (parseError) {
+    // Last resort: try fixing common issues
+    try {
+      // Remove control characters except newline and tab
+      const sanitized = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+      return JSON.parse(sanitized);
+    } catch {
+      throw new Error(
+        `Failed to parse JSON from ${stageName}. Extracted: ${extracted.substring(0, 300)}`
+      );
+    }
   }
 }
 
 /**
- * Call Gemma 4 multimodal model with text + image
- * Image MUST come before text for multimodal models.
+ * Create a Gemma 4 model instance with JSON-forced output.
+ * Uses responseMimeType to ensure the model returns valid JSON.
  */
-async function callGemma4(prompt: string, image: string, retries = 2): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemma-4-26b-a4b-it' });
+function createGemmaModel() {
+  return genAI.getGenerativeModel({
+    model: 'gemma-4-26b-a4b-it',
+    systemInstruction:
+      'You are an expert educational AI assistant. You MUST respond with valid JSON only. Do NOT include any markdown formatting, code blocks, backticks, explanations, or text outside the JSON structure.',
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 4096,
+    },
+  });
+}
+
+/**
+ * Call Gemma 4 multimodal model with text + image.
+ * Image MUST come before text for multimodal models.
+ * Uses responseMimeType to force valid JSON output.
+ */
+async function callGemma4(prompt: string, image: string, stageName: string, retries = 2): Promise<string> {
+  const model = createGemmaModel();
   const { mimeType, data } = extractBase64(image);
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // Image BEFORE text (required by Gemma 4 multimodal)
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType,
-            data,
+      console.log(`[${stageName}] API call attempt ${attempt + 1}/${retries + 1}...`);
+
+      const result = await model.generateContent({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType, data } },
+              { text: prompt },
+            ],
           },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+          maxOutputTokens: 4096,
         },
-        { text: prompt },
-      ]);
+      });
 
       const response = result.response;
       const text = response.text();
-      if (!text) throw new Error('Empty response from Gemma 4');
+
+      if (!text || text.trim().length === 0) {
+        throw new Error(`Empty response from Gemma 4 at ${stageName}`);
+      }
+
+      console.log(`[${stageName}] Success! Response length: ${text.length} chars`);
       return text;
     } catch (error: unknown) {
-      const err = error as Error & { status?: number };
-      const isRetryable = err.status === 500 || err.status === 503 || err.status === 429;
+      const err = error as Error & { status?: number; message?: string };
+      const statusCode = err.status || 0;
+      const isRetryable = statusCode === 500 || statusCode === 503 || statusCode === 429;
+
+      console.error(
+        `[${stageName}] Attempt ${attempt + 1} failed:`,
+        statusCode ? `HTTP ${statusCode}` : '',
+        err.message?.substring(0, 200)
+      );
+
       if (attempt < retries && isRetryable) {
         const delay = Math.pow(2, attempt) * 2000;
-        console.warn(`[Pipeline] Retry ${attempt + 1}/${retries} after ${err.status || 'unknown'} error, waiting ${delay}ms...`);
+        console.warn(`[${stageName}] Retry in ${delay}ms...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
+
+      // If responseMimeType causes issues, try without it as fallback
+      if (attempt === retries && err.message?.includes('responseMimeType')) {
+        console.warn(`[${stageName}] responseMimeType not supported, retrying without it...`);
+        try {
+          const fallbackResult = await model.generateContent([
+            { inlineData: { mimeType, data } },
+            { text: prompt },
+          ]);
+          const fallbackText = fallbackResult.response.text();
+          if (fallbackText) {
+            console.log(`[${stageName}] Fallback (no responseMimeType) succeeded: ${fallbackText.length} chars`);
+            return fallbackText;
+          }
+        } catch (fallbackErr) {
+          console.error(`[${stageName}] Fallback also failed:`, fallbackErr);
+        }
+      }
+
       throw error;
     }
   }
-  throw new Error('Max retries exceeded');
+
+  throw new Error(`Max retries exceeded for ${stageName}`);
 }
 
 /**
@@ -188,9 +298,7 @@ async function callGemma4(prompt: string, image: string, retries = 2): Promise<s
  * and learning objectives from the textbook page image.
  */
 async function analyzeContent(image: string, language: string) {
-  const prompt = `You are an expert educational content analyzer. I will show you an image of a textbook page.
-
-Your task is to perform a thorough content analysis. Extract and return a JSON object with these fields:
+  const prompt = `Analyze this textbook page image thoroughly. Extract and return a JSON object with these fields:
 
 1. "topics": array of main topics covered (strings)
 2. "keyConcepts": array of key concepts and terminology (strings)
@@ -200,12 +308,10 @@ Your task is to perform a thorough content analysis. Extract and return a JSON o
 6. "contentSegments": array of specific content segments that could be used for quiz questions, each with "segment" (string) and "potentialQuestionType" (one of: "mcq", "true_false", "fill_blank", "short_answer")
 
 Analyze ALL content including text, diagrams, tables, and mathematical expressions.
-Respond in ${language} for topics and concepts, but keep JSON keys in English.
+Respond in ${language} for topics and concepts, but keep JSON keys in English.`;
 
-Return ONLY valid JSON with NO markdown, NO code blocks, NO backticks.`;
-
-  const content = await callGemma4(prompt, image);
-  return parseJSONResponse(content) as Record<string, unknown>;
+  const content = await callGemma4(prompt, image, 'analyze_content');
+  return parseJSONResponse(content, 'analyze_content') as Record<string, unknown>;
 }
 
 /**
@@ -238,7 +344,7 @@ async function generateQuestions(
     .map((t) => typeGuide[t] || t)
     .join(', ');
 
-  const prompt = `You are an expert educator creating adaptive quizzes. I have already analyzed the textbook page content.
+  const prompt = `I have already analyzed this textbook page content.
 
 CONTENT ANALYSIS:
 ${JSON.stringify(contentAnalysis, null, 2)}
@@ -250,13 +356,11 @@ Requirements:
 - Base difficulty: ${difficulty} — ${difficultyGuide[difficulty] || difficultyGuide.intermediate}
 - Generate questions in ${language}
 - For each question, provide a clear explanation
-- IMPORTANT: Include a "difficultyRating" field for each question with one of: "easy", "medium", "hard"
-  - Mix difficulty levels: roughly 30% easy, 40% medium, 30% hard to enable adaptive selection
+- Include a "difficultyRating" field for each question with one of: "easy", "medium", "hard"
+  - Mix difficulty levels: roughly 30% easy, 40% medium, 30% hard
 - Include a "topicTag" field for each question identifying which topic from the analysis it relates to
 
-Return ONLY a valid JSON array with NO markdown formatting, NO code blocks, NO backticks.
-
-Each question object must have this structure:
+Return a JSON array with this structure:
 - For MCQ: {"type":"mcq","id":NUMBER,"question":"...","options":["A","B","C","D"],"correctAnswer":INDEX,"explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
 - For True/False: {"type":"true_false","id":NUMBER,"question":"...","correctAnswer":true/false,"explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
 - For Fill-in-blank: {"type":"fill_blank","id":NUMBER,"question":"...with _____ blank","correctAnswer":"the answer","explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
@@ -265,8 +369,15 @@ Each question object must have this structure:
 The correctAnswer for MCQ must be the 0-based index of the correct option.
 Start IDs from 1 and increment.`;
 
-  const content = await callGemma4(prompt, image);
-  return parseJSONResponse(content) as QuizQuestion[];
+  const content = await callGemma4(prompt, image, 'generate_question');
+  const parsed = parseJSONResponse(content, 'generate_question');
+
+  // Ensure we always return an array
+  if (Array.isArray(parsed)) return parsed as QuizQuestion[];
+  if (parsed && typeof parsed === 'object' && 'questions' in parsed) {
+    return (parsed as { questions: QuizQuestion[] }).questions;
+  }
+  throw new Error('generate_question did not return an array of questions');
 }
 
 /**
@@ -279,7 +390,7 @@ async function validateQuestions(
   questions: QuizQuestion[],
   contentAnalysis: Record<string, unknown>
 ) {
-  const prompt = `You are a quiz quality validator. I will show you a textbook page image, its content analysis, and generated quiz questions.
+  const prompt = `I will show you a textbook page image, its content analysis, and generated quiz questions.
 
 CONTENT ANALYSIS:
 ${JSON.stringify(contentAnalysis, null, 2)}
@@ -293,27 +404,35 @@ Validate each question. Return a JSON array of objects with:
 - "issues": array of strings describing any problems (empty if valid)
 - "suggestedFix": string with a fix suggestion if issues exist (empty string if valid)
 
-Be strict but fair. A question is valid if a student who read the page could reasonably answer it.
-Return ONLY valid JSON array with NO markdown, NO code blocks, NO backticks.`;
+Be strict but fair. A question is valid if a student who read the page could reasonably answer it.`;
 
-  const content = await callGemma4(prompt, image);
-  return parseJSONResponse(content) as { id: number; isValid: boolean; issues: string[]; suggestedFix: string }[];
+  const content = await callGemma4(prompt, image, 'validate_question');
+  const parsed = parseJSONResponse(content, 'validate_question');
+
+  if (Array.isArray(parsed)) {
+    return parsed as { id: number; isValid: boolean; issues: string[]; suggestedFix: string }[];
+  }
+  throw new Error('validate_question did not return an array of validation results');
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { image, difficulty = 'intermediate', numQuestions = 5, questionTypes = ['mcq'], language = 'English' } = body;
+    const {
+      image,
+      difficulty = 'intermediate',
+      numQuestions = 5,
+      questionTypes = ['mcq'],
+      language = 'English',
+    } = body;
 
     if (!image) {
-      return NextResponse.json(
-        { error: 'No image provided' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
+    // Check if API key is configured
     if (!process.env.GOOGLE_AI_API_KEY) {
-      console.warn('GOOGLE_AI_API_KEY not set, using sample fallback');
+      console.warn('[Pipeline] GOOGLE_AI_API_KEY not set, using sample fallback');
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
       return NextResponse.json({
         questions: shuffled.slice(0, numQuestions),
@@ -335,7 +454,10 @@ export async function POST(request: NextRequest) {
       pipelineStage = 'analyze_content';
       console.log('[Pipeline] Step 1: analyze_content() — Extracting key concepts from image...');
       contentAnalysis = await analyzeContent(image, language);
-      console.log('[Pipeline] Step 1 complete. Topics:', (contentAnalysis.topics as string[])?.join(', '));
+      console.log(
+        '[Pipeline] Step 1 complete. Topics:',
+        (contentAnalysis.topics as string[])?.join(', ') || 'none detected'
+      );
 
       // ============================================================
       // STEP 2: generate_question() — Generate quiz questions
@@ -343,7 +465,12 @@ export async function POST(request: NextRequest) {
       pipelineStage = 'generate_question';
       console.log('[Pipeline] Step 2: generate_question() — Creating quiz questions...');
       let questions: QuizQuestion[] = await generateQuestions(
-        image, contentAnalysis, difficulty, numQuestions, questionTypes, language
+        image,
+        contentAnalysis,
+        difficulty,
+        numQuestions,
+        questionTypes,
+        language
       );
       console.log(`[Pipeline] Step 2 complete. Generated ${questions.length} questions.`);
 
@@ -365,7 +492,9 @@ export async function POST(request: NextRequest) {
       });
 
       const removedCount = questions.length - validQuestions.length;
-      console.log(`[Pipeline] Step 3 complete. ${validQuestions.length}/${questions.length} questions passed validation.`);
+      console.log(
+        `[Pipeline] Step 3 complete. ${validQuestions.length}/${questions.length} questions passed validation.`
+      );
 
       // If validation removed too many questions, fall back to originals
       const finalQuestions = validQuestions.length >= 2 ? validQuestions : questions;
@@ -387,20 +516,22 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch (aiError) {
-      console.error(`AI pipeline error at stage '${pipelineStage}':`, aiError);
+      const err = aiError as Error;
+      console.error(`[Pipeline] AI pipeline error at stage '${pipelineStage}':`, err.message);
+      // Fall back to sample questions gracefully
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
       const sliced = shuffled.slice(0, numQuestions);
       return NextResponse.json({
         questions: sliced,
         pipeline: {
           stages: ['analyze_content', 'generate_question', 'validate_question'],
-          error: `Pipeline failed at: ${pipelineStage}`,
+          error: `Pipeline failed at: ${pipelineStage} — ${err.message?.substring(0, 100)}`,
           usedFallback: true,
         },
       });
     }
   } catch (error) {
-    console.error('Generate quiz error:', error);
+    console.error('[Pipeline] Generate quiz error:', error);
     return NextResponse.json(
       { error: 'Failed to generate quiz. Please try again.' },
       { status: 500 }
