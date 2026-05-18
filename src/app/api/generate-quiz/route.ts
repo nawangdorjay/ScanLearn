@@ -4,78 +4,23 @@ import type { QuizQuestion } from '@/lib/types';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
-// Model priority list — try each until one works
 const MODELS = [
-  'gemma-4-26b-a4b-it',   // Primary: Gemma 4 for hackathon
-  'gemini-2.0-flash',       // Fallback 1: Stable multimodal, very fast
-  'gemini-2.0-flash-lite',  // Fallback 2: Even lighter
+  'gemma-4-26b-a4b-it',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
 ];
 
 const sampleQuestions: QuizQuestion[] = [
-  {
-    type: 'mcq', id: 1,
-    question: 'What is the primary function of the mitochondria in a cell?',
-    options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'],
-    correctAnswer: 1,
-    explanation: 'Mitochondria are the "powerhouse of the cell," generating ATP through cellular respiration.',
-  },
-  {
-    type: 'mcq', id: 2,
-    question: 'Which organelle is responsible for photosynthesis?',
-    options: ['Mitochondria', 'Golgi apparatus', 'Chloroplast', 'Endoplasmic reticulum'],
-    correctAnswer: 2,
-    explanation: 'Chloroplasts contain chlorophyll and are the site of photosynthesis.',
-  },
-  {
-    type: 'true_false', id: 3,
-    question: 'The cell membrane is selectively permeable.',
-    correctAnswer: true,
-    explanation: 'The cell membrane controls what enters and exits the cell, maintaining homeostasis.',
-  },
-  {
-    type: 'true_false', id: 4,
-    question: 'DNA is found exclusively in the nucleus of eukaryotic cells.',
-    correctAnswer: false,
-    explanation: 'Eukaryotic cells also contain mitochondrial DNA and, in plants, chloroplast DNA.',
-  },
-  {
-    type: 'fill_blank', id: 5,
-    question: 'The process of cell division producing two identical daughter cells is called __________.',
-    correctAnswer: 'mitosis',
-    explanation: 'Mitosis produces two genetically identical daughter cells.',
-  },
-  {
-    type: 'mcq', id: 6,
-    question: 'What is the role of ribosomes?',
-    options: ['Energy production', 'Lipid synthesis', 'Protein synthesis', 'DNA replication'],
-    correctAnswer: 2,
-    explanation: 'Ribosomes translate mRNA into amino acid chains during protein synthesis.',
-  },
-  {
-    type: 'short_answer', id: 7,
-    question: 'Explain the difference between passive and active transport.',
-    correctAnswer: 'Passive transport moves substances down their concentration gradient without energy. Active transport moves substances against their gradient, requiring ATP.',
-    explanation: 'Passive transport requires no energy; active transport requires ATP.',
-  },
-  {
-    type: 'fill_blank', id: 8,
-    question: 'The __________ is the control center of the cell, containing the genetic material.',
-    correctAnswer: 'nucleus',
-    explanation: 'The nucleus contains DNA and controls gene expression.',
-  },
-  {
-    type: 'mcq', id: 9,
-    question: 'Which structure provides structural support to plant cells?',
-    options: ['Cell membrane', 'Cytoplasm', 'Cell wall', 'Vacuole'],
-    correctAnswer: 2,
-    explanation: 'The cell wall is a rigid outer layer made of cellulose.',
-  },
-  {
-    type: 'true_false', id: 10,
-    question: 'Enzymes are consumed in the chemical reactions they catalyze.',
-    correctAnswer: false,
-    explanation: 'Enzymes are catalysts that speed up reactions without being consumed.',
-  },
+  { type: 'mcq', id: 1, question: 'What is the primary function of the mitochondria in a cell?', options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'], correctAnswer: 1, explanation: 'Mitochondria are the "powerhouse of the cell," generating ATP through cellular respiration.' },
+  { type: 'mcq', id: 2, question: 'Which organelle is responsible for photosynthesis?', options: ['Mitochondria', 'Golgi apparatus', 'Chloroplast', 'Endoplasmic reticulum'], correctAnswer: 2, explanation: 'Chloroplasts contain chlorophyll and are the site of photosynthesis.' },
+  { type: 'true_false', id: 3, question: 'The cell membrane is selectively permeable.', correctAnswer: true, explanation: 'The cell membrane controls what enters and exits the cell, maintaining homeostasis.' },
+  { type: 'true_false', id: 4, question: 'DNA is found exclusively in the nucleus of eukaryotic cells.', correctAnswer: false, explanation: 'Eukaryotic cells also contain mitochondrial DNA and, in plants, chloroplast DNA.' },
+  { type: 'fill_blank', id: 5, question: 'The process of cell division producing two identical daughter cells is called __________.', correctAnswer: 'mitosis', explanation: 'Mitosis produces two genetically identical daughter cells.' },
+  { type: 'mcq', id: 6, question: 'What is the role of ribosomes?', options: ['Energy production', 'Lipid synthesis', 'Protein synthesis', 'DNA replication'], correctAnswer: 2, explanation: 'Ribosomes translate mRNA into amino acid chains during protein synthesis.' },
+  { type: 'short_answer', id: 7, question: 'Explain the difference between passive and active transport.', correctAnswer: 'Passive transport moves substances down their concentration gradient without energy. Active transport moves substances against their gradient, requiring ATP.', explanation: 'Passive transport requires no energy; active transport requires ATP.' },
+  { type: 'fill_blank', id: 8, question: 'The __________ is the control center of the cell, containing the genetic material.', correctAnswer: 'nucleus', explanation: 'The nucleus contains DNA and controls gene expression.' },
+  { type: 'mcq', id: 9, question: 'Which structure provides structural support to plant cells?', options: ['Cell membrane', 'Cytoplasm', 'Cell wall', 'Vacuole'], correctAnswer: 2, explanation: 'The cell wall is a rigid outer layer made of cellulose.' },
+  { type: 'true_false', id: 10, question: 'Enzymes are consumed in the chemical reactions they catalyze.', correctAnswer: false, explanation: 'Enzymes are catalysts that speed up reactions without being consumed.' },
 ];
 
 function extractBase64(image: string): { mimeType: string; data: string } {
@@ -87,117 +32,110 @@ function extractBase64(image: string): { mimeType: string; data: string } {
   return { mimeType: 'image/png', data: image };
 }
 
-function extractJSON(rawContent: string, stageName: string): unknown {
-  if (!rawContent || rawContent.trim().length === 0) {
-    throw new Error(`Empty response from ${stageName}`);
+/**
+ * Bulletproof JSON extractor — always uses balanced bracket matching.
+ * Handles: text before JSON, text after JSON, code blocks, nested strings.
+ * NEVER does direct JSON.parse on the full response.
+ */
+function extractJSON(raw: string, stage: string): unknown {
+  if (!raw?.trim()) throw new Error(`Empty response from ${stage}`);
+
+  const s = raw.trim();
+  // Log full response for debugging (first 1000 chars to see what model returns)
+  console.log(`[${stage}] FULL RAW RESPONSE START`);
+  console.log(s.substring(0, 1000));
+  console.log(`[${stage}] FULL RAW RESPONSE END (len=${s.length})`);
+
+  // Try to find a ```json``` or ``` code block first
+  const cb = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  let target = cb ? cb[1].trim() : s;
+
+  // Find first { or [ using balanced matching (string-aware)
+  let start = -1, open = '', close = '';
+  for (let i = 0; i < target.length; i++) {
+    if (target[i] === '{') { start = i; open = '{'; close = '}'; break; }
+    if (target[i] === '[') { start = i; open = '['; close = ']'; break; }
   }
 
-  const trimmed = rawContent.trim();
-  console.log(`[${stageName}] Raw (${trimmed.length} chars):`, trimmed.substring(0, 500));
+  if (start === -1) throw new Error(`No JSON found in ${stage}. Response: ${s.substring(0, 200)}`);
 
-  // Strategy 1: Direct parse
-  try {
-    return JSON.parse(trimmed);
-  } catch { /* continue */ }
-
-  // Strategy 2: Extract from code block
-  const codeMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeMatch) {
-    try { return JSON.parse(codeMatch[1].trim()); } catch { /* continue */ }
-  }
-
-  // Strategy 3: Balanced bracket extraction
-  const startBrace = trimmed.indexOf('{');
-  const startBracket = trimmed.indexOf('[');
-  let startIdx = -1, openChar = '', closeChar = '';
-
-  if (startBrace !== -1 && (startBracket === -1 || startBrace < startBracket)) {
-    startIdx = startBrace; openChar = '{'; closeChar = '}';
-  } else if (startBracket !== -1) {
-    startIdx = startBracket; openChar = '['; closeChar = ']';
-  }
-
-  if (startIdx === -1) throw new Error(`No JSON in ${stageName}. Raw: ${trimmed.substring(0, 300)}`);
-
-  let depth = 0, inStr = false, esc = false, endIdx = -1;
-  for (let i = startIdx; i < trimmed.length; i++) {
-    const c = trimmed[i];
+  // Walk balanced
+  let depth = 0, inStr = false, esc = false, end = -1;
+  for (let i = start; i < target.length; i++) {
+    const c = target[i];
     if (esc) { esc = false; continue; }
-    if (c === '\\') { esc = true; continue; }
+    if (c === '\\' && inStr) { esc = true; continue; }
     if (c === '"') { inStr = !inStr; continue; }
     if (inStr) continue;
-    if (c === openChar) depth++;
-    if (c === closeChar) depth--;
-    if (depth === 0) { endIdx = i + 1; break; }
+    if (c === open) depth++;
+    if (c === close) depth--;
+    if (depth === 0) { end = i + 1; break; }
   }
 
-  if (endIdx === -1) throw new Error(`Unbalanced JSON in ${stageName}`);
+  if (end === -1) throw new Error(`Unbalanced JSON in ${stage}`);
 
-  let extracted = trimmed.substring(startIdx, endIdx)
-    .replace(/,\s*([\]}])/g, '$1')
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  let json = target.substring(start, end);
+  // Fix trailing commas
+  json = json.replace(/,\s*([\]}])/g, '$1');
+  // Remove control chars
+  json = json.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 
-  return JSON.parse(extracted);
+  console.log(`[${stage}] EXTRACTED JSON (${json.length} chars):`, json.substring(0, 300));
+
+  try {
+    return JSON.parse(json);
+  } catch (e) {
+    // Absolute last resort: try fixing common issues
+    json = json.replace(/'/g, '"');
+    try { return JSON.parse(json); } catch { /* throw original */ }
+    throw new Error(`Parse failed in ${stage}. Extracted: ${json.substring(0, 200)}`);
+  }
 }
 
-/**
- * Try multiple models until one succeeds.
- */
-async function callModel(prompt: string, image: string, stageName: string): Promise<{ text: string; model: string }> {
+async function callModel(prompt: string, image: string, stage: string): Promise<{ text: string; model: string }> {
   const { mimeType, data } = extractBase64(image);
 
   for (const modelName of MODELS) {
     try {
-      console.log(`[${stageName}] Trying model: ${modelName}`);
+      console.log(`[${stage}] Trying ${modelName}...`);
       const model = genAI.getGenerativeModel({ model: modelName });
-
       const result = await model.generateContent([
         { inlineData: { mimeType, data } },
         { text: prompt },
       ]);
-
       const text = result.response.text();
-      if (!text || text.trim().length === 0) {
-        console.warn(`[${stageName}] ${modelName} returned empty response, trying next...`);
-        continue;
-      }
-
-      console.log(`[${stageName}] Success with ${modelName} (${text.length} chars)`);
+      if (!text?.trim()) { console.warn(`[${stage}] ${modelName} empty, next...`); continue; }
+      console.log(`[${stage}] ${modelName} OK (${text.length} chars)`);
       return { text, model: modelName };
-    } catch (error: unknown) {
-      const err = error as Error & { status?: number };
-      console.error(`[${stageName}] ${modelName} failed: HTTP ${err.status || 'N/A'} — ${err.message?.substring(0, 150)}`);
-      // Continue to next model
+    } catch (err: unknown) {
+      const e = err as Error & { status?: number };
+      console.error(`[${stage}] ${modelName} FAIL: HTTP ${e.status || '?'} ${e.message?.substring(0, 100)}`);
     }
   }
-
-  throw new Error(`All models failed for ${stageName}`);
+  throw new Error(`All models failed for ${stage}`);
 }
 
 // ─── STEP 1: analyze_content() ───
-async function analyzeContent(image: string, language: string, usedModel: string) {
-  const prompt = `You are an expert educational content analyzer. Analyze this textbook page image.
+async function analyzeContent(image: string, language: string) {
+  const prompt = `Analyze this textbook page image. Return ONLY a JSON object (no explanation, no markdown).
 
-Return ONLY a valid JSON object with these fields:
 {
-  "topics": ["main topic 1", "main topic 2"],
-  "keyConcepts": ["concept1", "concept2"],
-  "learningObjectives": ["what student should learn 1"],
-  "contentSummary": "brief summary of the page",
+  "topics": ["topic1", "topic2"],
+  "keyConcepts": ["concept1"],
+  "learningObjectives": ["objective1"],
+  "contentSummary": "brief summary",
   "difficultyIndicators": {"estimatedLevel": "beginner|intermediate|advanced", "reasoning": "why"},
-  "contentSegments": [{"segment": "text from page", "potentialQuestionType": "mcq|true_false|fill_blank|short_answer"}]
+  "contentSegments": [{"segment": "text", "potentialQuestionType": "mcq|true_false|fill_blank|short_answer"}]
 }
 
-Analyze text, diagrams, tables, and math. Topics/concepts in ${language}, JSON keys in English.
-Return ONLY the JSON object.`;
+Analyze text, diagrams, tables, math. Topics in ${language}, JSON keys in English. ONLY the JSON.`;
 
   const { text, model } = await callModel(prompt, image, 'analyze_content');
-  usedModel = model;
-  return { analysis: extractJSON(text, 'analyze_content') as Record<string, unknown>, model: usedModel };
+  return { analysis: extractJSON(text, 'analyze_content') as Record<string, unknown>, model };
 }
 
-// ─── STEP 2: generate_question() ───
-async function generateQuestions(
+// ─── STEP 2+3: generate_question() + validate_question() — merged into ONE call ───
+async function generateAndValidateQuestions(
   image: string,
   contentAnalysis: Record<string, unknown>,
   difficulty: string,
@@ -212,63 +150,57 @@ async function generateQuestions(
   };
   const types = questionTypes.map(t => ({ mcq: 'MCQ (4 options)', true_false: 'True/False', fill_blank: 'Fill Blank', short_answer: 'Short Answer' }[t] || t)).join(', ');
 
-  const prompt = `You are an expert quiz creator. Analyzed textbook content:
+  const prompt = `You are an expert quiz creator AND validator.
+
+CONTENT ANALYSIS:
 ${JSON.stringify(contentAnalysis, null, 2)}
 
-Generate exactly ${numQuestions} quiz questions. Return ONLY a JSON array. No explanation.
+Generate exactly ${numQuestions} validated quiz questions. Return ONLY a JSON array. No explanation, no markdown.
 
 [
-  {"type":"mcq","id":1,"question":"What is X?","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Because...","difficultyRating":"easy","topicTag":"topic"},
-  {"type":"true_false","id":2,"question":"Statement?","correctAnswer":true,"explanation":"...","difficultyRating":"medium","topicTag":"topic"}
+  {"type":"mcq","id":1,"question":"What is X?","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Because...","difficultyRating":"easy","topicTag":"topic","isValid":true},
+  {"type":"true_false","id":2,"question":"Statement?","correctAnswer":true,"explanation":"...","difficultyRating":"medium","topicTag":"topic","isValid":true}
 ]
 
 Rules:
 - Types: ${types}
 - Difficulty: ${difficulty} (${diffDesc[difficulty] || diffDesc.intermediate})
 - Language: ${language}
-- Each needs: explanation, difficultyRating (easy/medium/hard), topicTag
-- ~30% easy, 40% medium, 30% hard
+- Each question MUST have: explanation, difficultyRating (easy/medium/hard), topicTag, isValid (boolean)
+- isValid = true only if answerable from the page content
+- Mix difficulty: ~30% easy, 40% medium, 30% hard
 - MCQ correctAnswer = 0-based index. IDs from 1.
+- Only include questions where isValid is true
 Return ONLY the JSON array.`;
 
-  const { text } = await callModel(prompt, image, 'generate_question');
-  const parsed = extractJSON(text, 'generate_question');
+  const { text } = await callModel(prompt, image, 'generate_validate');
+  const parsed = extractJSON(text, 'generate_validate');
 
-  if (Array.isArray(parsed)) return parsed as QuizQuestion[];
-  if (parsed && typeof parsed === 'object') {
+  let questions: QuizQuestion[];
+  if (Array.isArray(parsed)) {
+    questions = parsed as QuizQuestion[];
+  } else if (parsed && typeof parsed === 'object') {
     for (const key of ['questions', 'results', 'data']) {
       if (key in parsed && Array.isArray((parsed as Record<string, unknown>)[key])) {
-        return (parsed as Record<string, QuizQuestion[]>)[key];
+        questions = (parsed as Record<string, QuizQuestion[]>)[key];
+        break;
       }
     }
+    if (!questions) throw new Error('No questions array found');
+  } else {
+    throw new Error('Unexpected response format');
   }
-  throw new Error('generate_question did not return array');
+
+  // Filter to only valid questions, strip isValid field
+  const validQuestions = questions.filter(q => {
+    const anyQ = q as Record<string, unknown>;
+    return anyQ.isValid !== false;
+  }).map(({ isValid: _iv, ...rest }: Record<string, unknown>) => rest as unknown as QuizQuestion);
+
+  return { questions: validQuestions, totalGenerated: questions.length };
 }
 
-// ─── STEP 3: validate_question() ───
-async function validateQuestions(
-  image: string,
-  questions: QuizQuestion[],
-  contentAnalysis: Record<string, unknown>
-) {
-  const prompt = `Validate these quiz questions against the textbook page analysis.
-
-Analysis: ${JSON.stringify(contentAnalysis, null, 2)}
-Questions: ${JSON.stringify(questions, null, 2)}
-
-Return ONLY a JSON array:
-[{"id":1,"isValid":true,"issues":[],"suggestedFix":""}]
-
-isValid = true if answerable from page. Return ONLY the JSON array.`;
-
-  const { text } = await callModel(prompt, image, 'validate_question');
-  const parsed = extractJSON(text, 'validate_question');
-
-  if (Array.isArray(parsed)) return parsed as { id: number; isValid: boolean; issues: string[]; suggestedFix: string }[];
-  throw new Error('validate_question did not return array');
-}
-
-// ─── POST Handler ───
+// ─── POST ───
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -277,7 +209,6 @@ export async function POST(request: NextRequest) {
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 });
 
     if (!process.env.GOOGLE_AI_API_KEY) {
-      console.warn('[Pipeline] No API key, fallback');
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
       return NextResponse.json({
         questions: shuffled.slice(0, numQuestions),
@@ -289,46 +220,37 @@ export async function POST(request: NextRequest) {
     let usedModel = 'none';
 
     try {
+      // STEP 1: analyze_content
       pipelineStage = 'analyze_content';
-      console.log('[Pipeline] Step 1/3: analyze_content()');
-      const { analysis, model: m1 } = await analyzeContent(image, language, usedModel);
-      usedModel = m1;
-      const contentAnalysis = analysis;
-      console.log('[Pipeline] Step 1 OK. Topics:', (contentAnalysis.topics as string[])?.join(', '));
+      console.log(`[Pipeline] v2 deploy | Step 1/2: analyze_content`);
+      const { analysis, model } = await analyzeContent(image, language);
+      usedModel = model;
+      console.log(`[Pipeline] Step 1 OK via ${model}`);
 
-      pipelineStage = 'generate_question';
-      console.log('[Pipeline] Step 2/3: generate_question()');
-      const questions: QuizQuestion[] = await generateQuestions(image, contentAnalysis, difficulty, numQuestions, questionTypes, language);
-      console.log(`[Pipeline] Step 2 OK. ${questions.length} questions.`);
+      // STEP 2+3: generate + validate (merged)
+      pipelineStage = 'generate_validate';
+      console.log(`[Pipeline] Step 2/2: generate_and_validate`);
+      const { questions, totalGenerated } = await generateAndValidateQuestions(image, analysis, difficulty, numQuestions, questionTypes, language);
+      console.log(`[Pipeline] Step 2 OK. ${questions.length}/${totalGenerated} valid questions.`);
 
-      if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions generated');
-
-      pipelineStage = 'validate_question';
-      console.log('[Pipeline] Step 3/3: validate_question()');
-      const validation = await validateQuestions(image, questions, contentAnalysis);
-
-      const valid = questions.filter(q => validation.find(v => v.id === q.id)?.isValid !== false);
-      const removed = questions.length - valid.length;
-      console.log(`[Pipeline] Step 3 OK. ${valid.length}/${questions.length} passed.`);
-
-      const final = valid.length >= 2 ? valid : questions;
+      if (!questions.length) throw new Error('No valid questions generated');
 
       return NextResponse.json({
-        questions: final,
+        questions,
         pipeline: {
           stages: ['analyze_content', 'generate_question', 'validate_question'],
           model: usedModel,
           contentAnalysis: {
-            topics: contentAnalysis.topics,
-            keyConcepts: contentAnalysis.keyConcepts,
-            learningObjectives: contentAnalysis.learningObjectives,
+            topics: analysis.topics,
+            keyConcepts: analysis.keyConcepts,
+            learningObjectives: analysis.learningObjectives,
           },
-          validation: { totalGenerated: questions.length, passedValidation: valid.length, removedCount: removed },
+          validation: { totalGenerated, passedValidation: questions.length, removedCount: totalGenerated - questions.length },
         },
       });
     } catch (aiError) {
       const err = aiError as Error;
-      console.error(`[Pipeline] Failed at ${pipelineStage}: ${err.message}`);
+      console.error(`[Pipeline] v2 FAIL at ${pipelineStage}: ${err.message}`);
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
       return NextResponse.json({
         questions: shuffled.slice(0, numQuestions),
