@@ -1,0 +1,134 @@
+---
+# ScanLearn - Video Narration Script
+# Total Duration: 3:00 (180 seconds)
+# Made with ❤ using Gemma 4 by Nawang Dorjay
+---
+
+## Scene 1 — The Problem (0:00 - 0:18) [18 seconds]
+
+Every day, millions of students around the world sit in classrooms,
+struggling to learn from textbooks that were never designed for them.
+In rural schools, in underfunded communities, and even in well-equipped
+classrooms, one-size-fits-all education leaves countless students behind.
+They read the same pages, memorize the same facts, and take the same tests,
+but true understanding remains out of reach.
+
+
+## Scene 2 — The Teacher's Burden (0:18 - 0:32) [14 seconds]
+
+And it's not just the students who suffer.
+Teachers, the backbone of our education system, spend countless hours
+after school creating quizzes, worksheets, and assessments from textbook pages.
+It's exhausting, time-consuming, and unsustainable.
+What if there was a better way?
+
+
+## Scene 3 — Title Card (0:32 - 0:40) [8 seconds]
+
+*(No narration — let the title card speak for itself)*
+*(Optional: Soft musical transition or gentle chime)*
+
+
+## Scene 4 — Meet ScanLearn (0:40 - 0:54) [14 seconds]
+
+Introducing ScanLearn — a smart, AI-powered tool that transforms any
+textbook page into an interactive, personalized quiz in seconds.
+With a clean, intuitive interface, ScanLearn is designed for both
+educators and students. No complex setup, no steep learning curve.
+Just upload and learn.
+
+
+## Scene 5 — Upload a Textbook Page (0:54 - 1:08) [14 seconds]
+
+Using ScanLearn is as simple as taking a photo.
+Open the app, point your camera at any textbook page, or upload an image
+from your device. ScanLearn accepts photos of physical books, screenshots
+of digital textbooks, even handwritten notes.
+One tap, and the magic begins.
+
+
+## Scene 6 — AI-Powered Quiz Generation (1:08 - 1:24) [16 seconds]
+
+This is where the real power of ScanLearn comes to life.
+Powered by Gemma 4, Google's cutting-edge multimodal AI,
+ScanLearn doesn't just read the text — it understands the context,
+identifies key concepts, and generates a variety of question types:
+multiple choice, fill-in-the-blank, short answer, and more.
+The quizzes adapt to the student's learning level,
+ensuring the right challenge at the right time.
+
+
+## Scene 7 — Interactive Quiz Experience (1:24 - 1:40) [16 seconds]
+
+Students engage with dynamically generated questions that test
+comprehension, not just memorization. Each question is crafted
+to match the difficulty and subject matter of the uploaded content.
+Instant feedback helps students learn from mistakes in real time,
+turning every quiz into a meaningful learning experience.
+
+
+## Scene 8 — Results Dashboard (1:40 - 1:54) [14 seconds]
+
+But ScanLearn doesn't stop at quizzes.
+A real-time results dashboard gives educators and students
+clear insights into performance. Track progress over time,
+identify strengths, and pinpoint areas that need more attention.
+Data-driven learning, made beautifully simple.
+
+
+## Scene 9 — The Impact on Students (1:54 - 2:08) [14 seconds]
+
+The result? Students who were once disengaged are now excited to learn.
+They're scoring higher on tests, asking better questions in class,
+and developing a genuine love for learning.
+ScanLearn doesn't just quiz — it empowers.
+
+
+## Scene 10 — Ripple Effect (2:08 - 2:20) [12 seconds]
+
+And the impact doesn't stop at individual classrooms.
+When one teacher adopts ScanLearn, it ripples outward.
+Schools see improved test scores across the board.
+Communities gain access to quality education tools.
+And the gap between well-funded and under-resourced schools
+begins to close.
+
+
+## Scene 11 — Built for the Future (2:20 - 2:32) [12 seconds]
+
+ScanLearn is built with modern web technologies,
+designed to run on any device with a browser.
+And because it's powered by Gemma 4,
+it can even run locally on edge devices,
+bringing AI-powered education to schools with limited or no internet access.
+
+
+## Scene 12 — Developer Credit (2:32 - 2:50) [18 seconds]
+
+*(Soft, warm music)*
+
+ScanLearn was built with passion and purpose,
+using Gemma 4 by Nawang Dorjay.
+Because every student, no matter where they are,
+deserves access to the future of learning.
+
+
+## Scene 13 — Closing (2:50 - 3:00) [10 seconds]
+
+The future of education starts here.
+The future of education starts now.
+ScanLearn — Learn Smarter, Not Harder.
+
+*(Music fades out)*
+
+---
+# END OF SCRIPT
+---
+
+## Production Notes:
+
+- **Total narration time**: ~2 minutes 42 seconds (with 18 seconds of silence for title card + credit card)
+- **Suggested voice style**: Warm, confident, inspiring — think educational documentary
+- **Background music**: Soft, uplifting piano or ambient electronic (low volume, under narration)
+- **Music-only sections**: Scene 3 (title card) and Scene 12 (developer credit)
+- **Pacing**: Speak slowly and clearly, with natural pauses between scenes
