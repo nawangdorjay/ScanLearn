@@ -118,7 +118,7 @@ function parseJSONResponse(content: string): unknown {
  * Call Gemma 4 multimodal model with text + image
  */
 async function callGemma4(prompt: string, image: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemma-4' });
+  const model = genAI.getGenerativeModel({ model: 'gemma-4-26b-a4b-it' });
   const { mimeType, data } = extractBase64(image);
 
   const result = await model.generateContent([
