@@ -122,3 +122,22 @@ Work Log:
 
 Stage Summary:
 - All 4 deliverables now carry proper attribution: "Made with ❤️ using Gemma 4 by Nawang Dorjay"
+
+---
+Task ID: 7-10
+Agent: Main Coordinator
+Task: Generate 3-minute demo video for ScanLearn
+
+Work Log:
+- Generated 6 AI images using z-ai-generate CLI: classroom, teacher, student struggle, student happy, ripple montage, boy smile
+- Created 13 video frames using PIL: 6 AI images with text overlays + 7 motion graphic cards (title, upload, quiz gen, results, architecture, closing, hold)
+- Assembled frames into concat file with precise scene timing (8s-20s per scene)
+- Rendered 720p video with ffmpeg (libx264, ultrafast preset, 8fps) - 3:00 exactly
+- Trimmed to exactly 180 seconds, added faststart for web playback
+- Cleaned up temporary files
+
+Stage Summary:
+- Video saved at /home/z/my-project/download/scanlearn/video/ScanLearn_Demo.mp4
+- Duration: 3:00 | Resolution: 854x480 | Size: ~880KB
+- 12 scenes: Problem (3 scenes) > Title > Upload > Quiz Gen > Happy Student > Results > Ripple > Architecture > Smile > Closing
+- Attribution on every frame: "Made with ❤ using Gemma 4 by Nawang Dorjay"
