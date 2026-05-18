@@ -99,42 +99,87 @@ function extractBase64(image: string): { mimeType: string; data: string } {
  */
 function parseJSONResponse(content: string): unknown {
   let jsonStr = content.trim();
+  // Remove markdown code blocks
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) jsonStr = jsonMatch[1].trim();
+  // Try to find JSON object or array
   const objMatch = jsonStr.match(/\{[\s\S]*\}/);
   const arrMatch = jsonStr.match(/\[[\s\S]*\]/);
   if (objMatch && arrMatch) {
-    // Return whichever comes first
     jsonStr = objMatch.index! < arrMatch.index! ? objMatch[0] : arrMatch[0];
   } else if (objMatch) {
     jsonStr = objMatch[0];
   } else if (arrMatch) {
     jsonStr = arrMatch[0];
   }
-  return JSON.parse(jsonStr);
+  // Clean up common issues: trailing commas, control characters
+  jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
+  jsonStr = jsonStr.replace(/[\x00-\x1F]/g, '');
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    // Last resort: try to extract with a more lenient approach
+    const firstBrace = jsonStr.indexOf('{');
+    const firstBracket = jsonStr.indexOf('[');
+    let start = -1;
+    let end = -1;
+    if (firstBrace !== -1 || firstBracket !== -1) {
+      start = firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)
+        ? firstBrace : firstBracket;
+      const openChar = jsonStr[start];
+      const closeChar = openChar === '{' ? '}' : ']';
+      let depth = 0;
+      for (let i = start; i < jsonStr.length; i++) {
+        if (jsonStr[i] === openChar) depth++;
+        if (jsonStr[i] === closeChar) depth--;
+        if (depth === 0) { end = i + 1; break; }
+      }
+    }
+    if (start !== -1 && end !== -1) {
+      return JSON.parse(jsonStr.substring(start, end));
+    }
+    throw new Error(`Could not parse JSON from response: ${jsonStr.substring(0, 100)}...`);
+  }
 }
 
 /**
  * Call Gemma 4 multimodal model with text + image
+ * Image MUST come before text for multimodal models.
  */
-async function callGemma4(prompt: string, image: string): Promise<string> {
+async function callGemma4(prompt: string, image: string, retries = 2): Promise<string> {
   const model = genAI.getGenerativeModel({ model: 'gemma-4-26b-a4b-it' });
   const { mimeType, data } = extractBase64(image);
 
-  const result = await model.generateContent([
-    prompt,
-    {
-      inlineData: {
-        mimeType,
-        data,
-      },
-    },
-  ]);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // Image BEFORE text (required by Gemma 4 multimodal)
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            mimeType,
+            data,
+          },
+        },
+        { text: prompt },
+      ]);
 
-  const response = result.response;
-  const text = response.text();
-  if (!text) throw new Error('Empty response from Gemma 4');
-  return text;
+      const response = result.response;
+      const text = response.text();
+      if (!text) throw new Error('Empty response from Gemma 4');
+      return text;
+    } catch (error: unknown) {
+      const err = error as Error & { status?: number };
+      const isRetryable = err.status === 500 || err.status === 503 || err.status === 429;
+      if (attempt < retries && isRetryable) {
+        const delay = Math.pow(2, attempt) * 2000;
+        console.warn(`[Pipeline] Retry ${attempt + 1}/${retries} after ${err.status || 'unknown'} error, waiting ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Max retries exceeded');
 }
 
 /**
