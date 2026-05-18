@@ -253,11 +253,11 @@ const doc = new Document({
         englishLabel: "GEMMA 4 GOOD HACKATHON",
         metaLines: [
           "Track: Future of Education",
-          "Powered by Gemma 4 Multimodal + Function Calling",
-          "Gemma 4 Good Hackathon 2026",
+          "Made with \u2764 using Gemma 4",
+          "By Nawang Dorjay",
         ],
-        footerLeft: "Kaggle Writeup",
-        footerRight: "May 2026",
+        footerLeft: "Gemma 4 Good Hackathon 2026",
+        footerRight: "Nawang Dorjay",
         palette: { bg: cp, primary: P.primary, accent: P.accent },
       }),
     },
@@ -320,6 +320,10 @@ const doc = new Document({
         para("Performance on edge devices was also a key consideration. We implemented a lightweight fallback mode that uses pre-computed quiz templates when the full model is unavailable, ensuring the application remains functional even on minimal hardware. This graceful degradation strategy means ScanLearn works everywhere, from a school computer lab to a teacher's personal laptop."),
 
         // ─── Impact ───
+        h1("Built by Nawang Dorjay"),
+
+        para("ScanLearn was created with love and a deep belief that every student deserves a personalized learning experience. Built by Nawang Dorjay as part of the Gemma 4 Good Hackathon 2026, this project represents a vision for education that is adaptive, accessible, and equitable for learners everywhere, regardless of their resources or connectivity."),
+
         h1("Real-World Impact"),
 
         para("ScanLearn directly addresses the Future of Education track's core mission: reimagining learning through AI that adapts to the individual. By eliminating the need for pre-digitized content, it democratizes access to personalized learning for schools that cannot afford expensive digital curricula. By supporting local deployment, it reaches communities where internet connectivity remains unreliable. And by generating quizzes in multiple languages, it serves linguistically diverse classrooms where a single textbook might be the only shared learning resource."),

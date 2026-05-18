@@ -106,3 +106,19 @@ Work Log:
 Stage Summary:
 - README saved at /home/z/my-project/download/scanlearn/README.md
 - Complete project documentation ready for GitHub
+
+---
+Task ID: 6
+Agent: Main Coordinator
+Task: Add author attribution to all deliverables
+
+Work Log:
+- Updated Kaggle Writeup cover: metaLines and footer now show "Made with ❤ using Gemma 4 by Nawang Dorjay"
+- Added "Built by Nawang Dorjay" section to Kaggle Writeup body
+- Updated Video Script cover: metaLines and footer show "Made with ❤ using Gemma 4 by Nawang Dorjay"
+- Updated README.md header: "Made with ❤️ using Gemma 4 by Nawang Dorjay"
+- Updated README.md footer: "Made with ❤️ using Gemma 4 by Nawang Dorjay"
+- Regenerated both DOCX files and ran postcheck (0 errors each)
+
+Stage Summary:
+- All 4 deliverables now carry proper attribution: "Made with ❤️ using Gemma 4 by Nawang Dorjay"

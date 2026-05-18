@@ -1,8 +1,9 @@
 # ScanLearn — Transform Any Textbook Into an Adaptive Quiz
 
 <p align="center">
-  <strong>Powered by Gemma 4 Multimodal + Function Calling</strong><br/>
-  <em>Gemma 4 Good Hackathon 2026 | Track: Future of Education</em>
+  <strong>Made with ❤️ using Gemma 4</strong><br/>
+  <em>By Nawang Dorjay</em><br/>
+  <strong>Gemma 4 Good Hackathon 2026 | Track: Future of Education</strong>
 </p>
 
 ---
@@ -156,4 +157,6 @@ MIT License — See [LICENSE](LICENSE) for details.
 
 ---
 
-Built with ❤️ for the Gemma 4 Good Hackathon 2026
+Made with ❤️ using Gemma 4 by **Nawang Dorjay**
+
+Built for the Gemma 4 Good Hackathon 2026
