@@ -1,6 +1,7 @@
 export type QuestionType = 'mcq' | 'true_false' | 'fill_blank' | 'short_answer';
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type AppView = 'landing' | 'generate' | 'quiz' | 'results' | 'how-it-works';
+export type AdaptiveDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface QuizSettings {
   difficulty: DifficultyLevel;
@@ -16,6 +17,8 @@ export interface MCQQuestion {
   options: string[];
   correctAnswer: number;
   explanation: string;
+  difficultyRating?: AdaptiveDifficulty;
+  topicTag?: string;
 }
 
 export interface TrueFalseQuestion {
@@ -24,6 +27,8 @@ export interface TrueFalseQuestion {
   question: string;
   correctAnswer: boolean;
   explanation: string;
+  difficultyRating?: AdaptiveDifficulty;
+  topicTag?: string;
 }
 
 export interface FillBlankQuestion {
@@ -32,6 +37,8 @@ export interface FillBlankQuestion {
   question: string;
   correctAnswer: string;
   explanation: string;
+  difficultyRating?: AdaptiveDifficulty;
+  topicTag?: string;
 }
 
 export interface ShortAnswerQuestion {
@@ -40,6 +47,8 @@ export interface ShortAnswerQuestion {
   question: string;
   correctAnswer: string;
   explanation: string;
+  difficultyRating?: AdaptiveDifficulty;
+  topicTag?: string;
 }
 
 export type QuizQuestion =
@@ -62,4 +71,22 @@ export interface QuizResult {
   isCorrect: boolean;
   explanation: string;
   options?: string[];
+  difficultyRating?: AdaptiveDifficulty;
+  topicTag?: string;
+}
+
+export interface PipelineInfo {
+  stages: string[];
+  contentAnalysis?: {
+    topics?: string[];
+    keyConcepts?: string[];
+    learningObjectives?: string[];
+  };
+  validation?: {
+    totalGenerated?: number;
+    passedValidation?: number;
+    removedCount?: number;
+  };
+  error?: string;
+  usedFallback?: boolean;
 }

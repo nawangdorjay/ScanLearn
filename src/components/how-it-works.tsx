@@ -47,9 +47,9 @@ const steps = [
   {
     step: 2,
     icon: Brain,
-    title: 'Gemma 4 Multimodal Analysis',
+    title: 'Step 1: analyze_content()',
     description:
-      'The Gemma 4 multimodal AI model reads and comprehends the content in the uploaded image. It understands text, diagrams, equations, tables, and charts — extracting key concepts and learning objectives.',
+      'Gemma 4 multimodal vision reads the textbook page image and extracts structured content analysis: main topics, key concepts, learning objectives, difficulty indicators, and specific content segments — understanding text, diagrams, equations, and tables holistically.',
     color: 'from-[#0D9488] to-[#14B8A6]',
     iconBg: 'bg-[#0D9488]/10',
     iconColor: 'text-[#0D9488]',
@@ -57,19 +57,29 @@ const steps = [
   {
     step: 3,
     icon: Sparkles,
-    title: 'Function Calling: Structured Quiz Generation',
+    title: 'Step 2: generate_question()',
     description:
-      'Using function calling capabilities, the AI generates structured quiz questions in multiple formats — MCQs, True/False, Fill-in-the-blank, and Short Answer — each with correct answers and detailed explanations.',
+      'Using the content analysis from Step 2, the AI generates structured quiz questions in multiple formats — MCQs, True/False, Fill-in-the-blank, and Short Answer — each tagged with a difficulty rating (easy/medium/hard) and topic label. Questions include correct answers and detailed explanations.',
     color: 'from-[#F59E0B] to-[#FBBF24]',
     iconBg: 'bg-[#F59E0B]/10',
     iconColor: 'text-[#F59E0B]',
   },
   {
     step: 4,
+    icon: Cpu,
+    title: 'Step 3: validate_question()',
+    description:
+      'Each generated question is validated against the original source content. The AI checks that every question is answerable from the textbook page and free of ambiguity. Invalid questions are filtered out before being presented to the student.',
+    color: 'from-[#EC4899] to-[#F472B6]',
+    iconBg: 'bg-[#EC4899]/10',
+    iconColor: 'text-[#EC4899]',
+  },
+  {
+    step: 5,
     icon: Zap,
     title: 'Adaptive Difficulty Engine',
     description:
-      'The quiz engine adjusts question difficulty based on the selected level (Beginner, Intermediate, Advanced) and can further adapt based on your performance patterns, ensuring optimal learning challenge.',
+      'During the quiz, the engine monitors student performance in real-time using a sliding window of recent answers. After 3 consecutive correct answers, difficulty increases. After 3 consecutive wrong answers, it decreases. This ensures every student is challenged at the right level.',
     color: 'from-purple-500 to-purple-400',
     iconBg: 'bg-purple-500/10',
     iconColor: 'text-purple-500',
@@ -146,7 +156,7 @@ export function HowItWorksPage() {
               The Pipeline
             </h2>
             <p className="text-muted-foreground">
-              Four stages from image to interactive quiz
+              Five stages from image to interactive quiz
             </p>
           </motion.div>
 
@@ -253,32 +263,39 @@ export function HowItWorksPage() {
                       </div>
                     </div>
 
-                    {/* AI Processing */}
+                    {/* AI Processing - 3-step pipeline */}
                     <div className="rounded-xl border-2 border-[#0D9488]/30 bg-gradient-to-r from-[#0D9488]/5 to-[#2563EB]/5 p-4">
-                      <div className="flex items-center justify-center gap-4">
+                      <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
                         <div className="flex flex-col items-center">
-                          <div className="rounded-lg bg-[#0D9488]/10 p-3">
-                            <Brain className="h-8 w-8 text-[#0D9488]" />
+                          <div className="rounded-lg bg-[#0D9488]/10 p-2 sm:p-3">
+                            <Brain className="h-6 w-6 sm:h-8 sm:w-8 text-[#0D9488]" />
                           </div>
-                          <p className="mt-1 text-xs font-semibold">Vision AI</p>
+                          <p className="mt-1 text-[10px] sm:text-xs font-semibold text-center">1. analyze_content()</p>
                         </div>
                         <span className="text-muted-foreground">→</span>
                         <div className="flex flex-col items-center">
-                          <div className="rounded-lg bg-[#F59E0B]/10 p-3">
-                            <Sparkles className="h-8 w-8 text-[#F59E0B]" />
+                          <div className="rounded-lg bg-[#F59E0B]/10 p-2 sm:p-3">
+                            <Sparkles className="h-6 w-6 sm:h-8 sm:w-8 text-[#F59E0B]" />
                           </div>
-                          <p className="mt-1 text-xs font-semibold">Function Calling</p>
+                          <p className="mt-1 text-[10px] sm:text-xs font-semibold text-center">2. generate_question()</p>
                         </div>
                         <span className="text-muted-foreground">→</span>
                         <div className="flex flex-col items-center">
-                          <div className="rounded-lg bg-purple-500/10 p-3">
-                            <Zap className="h-8 w-8 text-purple-500" />
+                          <div className="rounded-lg bg-[#EC4899]/10 p-2 sm:p-3">
+                            <Cpu className="h-6 w-6 sm:h-8 sm:w-8 text-[#EC4899]" />
                           </div>
-                          <p className="mt-1 text-xs font-semibold">Adaptive Engine</p>
+                          <p className="mt-1 text-[10px] sm:text-xs font-semibold text-center">3. validate_question()</p>
+                        </div>
+                        <span className="text-muted-foreground">→</span>
+                        <div className="flex flex-col items-center">
+                          <div className="rounded-lg bg-purple-500/10 p-2 sm:p-3">
+                            <Zap className="h-6 w-6 sm:h-8 sm:w-8 text-purple-500" />
+                          </div>
+                          <p className="mt-1 text-[10px] sm:text-xs font-semibold text-center">Adaptive</p>
                         </div>
                       </div>
                       <p className="mt-3 text-center text-xs text-muted-foreground">
-                        Powered by Gemma 4 Multimodal
+                        3-step Gemma 4 function calling pipeline
                       </p>
                     </div>
 

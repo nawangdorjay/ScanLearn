@@ -10,6 +10,10 @@ import {
   HelpCircle,
   Pencil,
   XCircle,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,6 +37,7 @@ import type {
   TrueFalseQuestion,
   FillBlankQuestion,
   ShortAnswerQuestion,
+  AdaptiveDifficulty,
 } from '@/lib/types';
 
 function getQuestionTypeColor(type: string) {
@@ -55,6 +60,30 @@ function getQuestionTypeLabel(type: string) {
   }
 }
 
+function getDifficultyColor(d: AdaptiveDifficulty) {
+  switch (d) {
+    case 'easy': return 'bg-green-500/10 text-green-600 border-green-500/20';
+    case 'medium': return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20';
+    case 'hard': return 'bg-red-500/10 text-red-600 border-red-500/20';
+  }
+}
+
+function getDifficultyLabel(d: AdaptiveDifficulty) {
+  switch (d) {
+    case 'easy': return 'Easy';
+    case 'medium': return 'Medium';
+    case 'hard': return 'Hard';
+  }
+}
+
+function getDifficultyIcon(d: AdaptiveDifficulty) {
+  switch (d) {
+    case 'easy': return <TrendingDown className="h-3 w-3" />;
+    case 'medium': return <Minus className="h-3 w-3" />;
+    case 'hard': return <TrendingUp className="h-3 w-3" />;
+  }
+}
+
 export function QuizPlayer() {
   const {
     quizQuestions,
@@ -64,6 +93,10 @@ export function QuizPlayer() {
     setAnswer,
     setResults,
     setView,
+    adaptiveDifficulty,
+    adaptiveHistory,
+    recalculateAdaptiveDifficulty,
+    pipelineInfo,
   } = useQuizStore();
 
   const currentQuestion = quizQuestions[currentIndex];
@@ -74,6 +107,13 @@ export function QuizPlayer() {
 
   const answeredCount = answers.length;
   const answeredPercent = Math.round((answeredCount / totalQuestions) * 100);
+
+  // Calculate running accuracy for adaptive display
+  const runningAccuracy = useMemo(() => {
+    if (adaptiveHistory.length === 0) return null;
+    const recent = adaptiveHistory.slice(-5);
+    return Math.round((recent.filter(Boolean).length / recent.length) * 100);
+  }, [adaptiveHistory]);
 
   const calculateResults = () => {
     const results: QuizResult[] = quizQuestions.map((q) => {
@@ -103,7 +143,6 @@ export function QuizPlayer() {
           correctAnswer = q.correctAnswer;
           const userStr2 = String(userAnswer || '').trim().toLowerCase();
           const correctStr2 = q.correctAnswer.trim().toLowerCase();
-          // Simple similarity check for short answers
           const words1 = userStr2.split(/\s+/);
           const words2 = correctStr2.split(/\s+/);
           const overlap = words1.filter((w) => words2.includes(w)).length;
@@ -121,6 +160,8 @@ export function QuizPlayer() {
         isCorrect,
         explanation: q.explanation,
         ...(q.type === 'mcq' ? { options: q.options } : {}),
+        difficultyRating: q.difficultyRating,
+        topicTag: q.topicTag,
       };
     });
 
@@ -129,6 +170,9 @@ export function QuizPlayer() {
   };
 
   const handleNext = () => {
+    // Run adaptive difficulty engine when moving to next question
+    recalculateAdaptiveDifficulty();
+
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     }
@@ -139,6 +183,19 @@ export function QuizPlayer() {
       setCurrentIndex(currentIndex - 1);
     }
   };
+
+  // Check if difficulty recently changed
+  const difficultyChanged = useMemo(() => {
+    if (adaptiveHistory.length < 3) return null;
+    const prev3 = adaptiveHistory.slice(-6, -3);
+    const curr3 = adaptiveHistory.slice(-3);
+    if (prev3.length < 3) return null;
+    const prevCorrect = prev3.filter(Boolean).length;
+    const currCorrect = curr3.filter(Boolean).length;
+    if (currCorrect === 3 && prevCorrect < 3) return 'up';
+    if (currCorrect === 0 && prevCorrect > 0) return 'down';
+    return null;
+  }, [adaptiveHistory]);
 
   if (!currentQuestion) return null;
 
@@ -168,6 +225,57 @@ export function QuizPlayer() {
             Finish Quiz
           </Button>
         </div>
+
+        {/* Adaptive Difficulty Indicator */}
+        <div className="mb-4 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-2.5">
+          <Zap className="h-4 w-4 text-[#2563EB]" />
+          <span className="text-xs font-medium text-muted-foreground">Adaptive Difficulty:</span>
+          <Badge variant="outline" className={`gap-1 ${getDifficultyColor(adaptiveDifficulty)}`}>
+            {getDifficultyIcon(adaptiveDifficulty)}
+            {getDifficultyLabel(adaptiveDifficulty)}
+          </Badge>
+          {runningAccuracy !== null && (
+            <span className="text-xs text-muted-foreground">
+              (Recent accuracy: {runningAccuracy}%)
+            </span>
+          )}
+          {difficultyChanged === 'up' && (
+            <motion.span
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-xs font-semibold text-green-600"
+            >
+              Leveling up!
+            </motion.span>
+          )}
+          {difficultyChanged === 'down' && (
+            <motion.span
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-xs font-semibold text-orange-600"
+            >
+              Adjusting down
+            </motion.span>
+          )}
+        </div>
+
+        {/* Pipeline Info Badge */}
+        {pipelineInfo && !pipelineInfo.usedFallback && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {pipelineInfo.stages.map((stage) => (
+              <Badge key={stage} variant="secondary" className="text-[10px] font-normal">
+                {stage === 'analyze_content' ? '1. Content Analysis' :
+                 stage === 'generate_question' ? '2. Question Generation' :
+                 stage === 'validate_question' ? '3. Validation' : stage}
+              </Badge>
+            ))}
+            {pipelineInfo.validation && (
+              <Badge variant="outline" className="text-[10px] font-normal text-green-600 border-green-500/20">
+                {pipelineInfo.validation.passedValidation}/{pipelineInfo.validation.totalGenerated} validated
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* Progress bar */}
         <div className="mb-6 space-y-2">
@@ -214,12 +322,28 @@ export function QuizPlayer() {
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
-                    <Badge
-                      variant="outline"
-                      className={`mb-3 ${getQuestionTypeColor(currentQuestion.type)}`}
-                    >
-                      {getQuestionTypeLabel(currentQuestion.type)}
-                    </Badge>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={getQuestionTypeColor(currentQuestion.type)}
+                      >
+                        {getQuestionTypeLabel(currentQuestion.type)}
+                      </Badge>
+                      {currentQuestion.difficultyRating && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${getDifficultyColor(currentQuestion.difficultyRating)}`}
+                        >
+                          {getDifficultyIcon(currentQuestion.difficultyRating)}
+                          {getDifficultyLabel(currentQuestion.difficultyRating)}
+                        </Badge>
+                      )}
+                      {currentQuestion.topicTag && (
+                        <Badge variant="outline" className="text-[10px] font-normal">
+                          {currentQuestion.topicTag}
+                        </Badge>
+                      )}
+                    </div>
                     <CardTitle className="text-lg leading-relaxed">
                       {currentQuestion.question}
                     </CardTitle>

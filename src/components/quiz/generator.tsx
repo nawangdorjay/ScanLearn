@@ -69,6 +69,7 @@ export function QuizGenerator() {
     setIsGenerating,
     setQuizQuestions,
     setView,
+    setPipelineInfo,
   } = useQuizStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,6 +163,9 @@ export function QuizGenerator() {
 
       if (data.questions && data.questions.length > 0) {
         setQuizQuestions(data.questions);
+        if (data.pipeline) {
+          setPipelineInfo(data.pipeline);
+        }
         setView('quiz');
       } else {
         throw new Error('No questions generated. Please try again.');
@@ -420,7 +424,7 @@ export function QuizGenerator() {
           {isGenerating ? (
             <>
               <Loader2 className="h-5 w-5 animate-spin" />
-              Generating Quiz with AI...
+              <span className="animate-pulse">Analyzing content...</span>
             </>
           ) : (
             <>
