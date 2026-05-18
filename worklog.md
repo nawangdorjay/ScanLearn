@@ -138,6 +138,7 @@ Work Log:
 
 Stage Summary:
 - Video saved at /home/z/my-project/download/scanlearn/video/ScanLearn_Demo.mp4
-- Duration: 3:00 | Resolution: 854x480 | Size: ~880KB
-- 12 scenes: Problem (3 scenes) > Title > Upload > Quiz Gen > Happy Student > Results > Ripple > Architecture > Smile > Closing
+- Duration: 3:00 | Size: ~870KB
+- 12 scenes: Problem (3 scenes) > Title > REAL APP RECORDING (17s) > App Screenshots > Quiz Gen > Happy Student > Results > Ripple > Architecture > Smile > Closing
 - Attribution on every frame: "Made with ❤ using Gemma 4 by Nawang Dorjay"
+- FIXES: Removed heavy dark shading on photos (now subtle gradient + text shadow only); Added real app recording via Playwright (17s of actual web app interaction)
