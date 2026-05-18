@@ -95,229 +95,188 @@ function extractBase64(image: string): { mimeType: string; data: string } {
 }
 
 /**
- * Robust JSON parser that handles AI model output quirks.
- * Tries multiple strategies to extract valid JSON.
+ * Robust JSON extraction from LLM output.
+ * LLMs often wrap JSON in markdown code blocks or add surrounding text.
  */
-function parseJSONResponse(rawContent: string, stageName: string): unknown {
+function extractJSON(rawContent: string, stageName: string): unknown {
   if (!rawContent || rawContent.trim().length === 0) {
     throw new Error(`Empty response from ${stageName}`);
   }
 
-  let jsonStr = rawContent.trim();
+  const trimmed = rawContent.trim();
+  console.log(`[${stageName}] Raw response (${trimmed.length} chars):`, trimmed.substring(0, 500));
 
-  // Log raw response for debugging (first 300 chars)
-  console.log(`[${stageName}] Raw response (${jsonStr.length} chars):`, jsonStr.substring(0, 300));
-
-  // Strategy 1: Try direct JSON.parse (works when responseMimeType is set)
+  // ── Strategy 1: Direct parse (if model returned clean JSON) ──
   try {
-    return JSON.parse(jsonStr);
+    const parsed = JSON.parse(trimmed);
+    console.log(`[${stageName}] Direct JSON.parse succeeded`);
+    return parsed;
   } catch {
-    // Continue to next strategy
+    // continue
   }
 
-  // Strategy 2: Remove markdown code blocks (```json ... ```)
-  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
+  // ── Strategy 2: Extract from ```json ... ``` or ``` ... ``` code block ──
+  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/;
+  const codeMatch = trimmed.match(codeBlockRegex);
+  if (codeMatch) {
+    const inner = codeMatch[1].trim();
     try {
-      return JSON.parse(codeBlockMatch[1].trim());
+      const parsed = JSON.parse(inner);
+      console.log(`[${stageName}] Extracted from code block, parsed OK`);
+      return parsed;
     } catch {
-      // Continue
+      console.log(`[${stageName}] Code block content failed parse: ${inner.substring(0, 200)}`);
     }
   }
 
-  // Strategy 3: Extract first complete JSON object using balanced brace matching
-  const firstBrace = jsonStr.indexOf('{');
-  const firstBracket = jsonStr.indexOf('[');
+  // ── Strategy 3: Balanced bracket/brace extraction ──
+  // Find the first { or [ and match to its closing counterpart
+  const startBrace = trimmed.indexOf('{');
+  const startBracket = trimmed.indexOf('[');
 
-  if (firstBrace === -1 && firstBracket === -1) {
-    throw new Error(`No JSON found in ${stageName} response. Raw: ${jsonStr.substring(0, 200)}`);
+  let startIdx = -1;
+  let openChar = '';
+  let closeChar = '';
+
+  if (startBrace !== -1 && (startBracket === -1 || startBrace < startBracket)) {
+    startIdx = startBrace;
+    openChar = '{';
+    closeChar = '}';
+  } else if (startBracket !== -1) {
+    startIdx = startBracket;
+    openChar = '[';
+    closeChar = ']';
   }
 
-  // Determine which starts first
-  const startIdx = firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)
-    ? firstBrace
-    : firstBracket;
-  const openChar = jsonStr[startIdx];
-  const closeChar = openChar === '{' ? '}' : ']';
+  if (startIdx === -1) {
+    throw new Error(`No JSON structure found in ${stageName}. Raw: ${trimmed.substring(0, 300)}`);
+  }
 
-  // Balanced matching to find the complete JSON structure
+  // Walk through string with string-aware balanced matching
   let depth = 0;
   let inString = false;
   let escaped = false;
   let endIdx = -1;
 
-  for (let i = startIdx; i < jsonStr.length; i++) {
-    const ch = jsonStr[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
+  for (let i = startIdx; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\') { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
     if (inString) continue;
     if (ch === openChar) depth++;
     if (ch === closeChar) depth--;
-    if (depth === 0) {
-      endIdx = i + 1;
-      break;
-    }
+    if (depth === 0) { endIdx = i + 1; break; }
   }
 
   if (endIdx === -1) {
-    throw new Error(`Incomplete JSON in ${stageName} response. Raw: ${jsonStr.substring(0, 200)}`);
+    throw new Error(`Unbalanced JSON in ${stageName}. Raw: ${trimmed.substring(startIdx, startIdx + 300)}`);
   }
 
-  const extracted = jsonStr.substring(startIdx, endIdx);
+  let extracted = trimmed.substring(startIdx, endIdx);
 
-  // Clean common issues: trailing commas before } or ]
-  const cleaned = extracted.replace(/,\s*([\]}])/g, '$1');
+  // Clean trailing commas before } or ]
+  extracted = extracted.replace(/,\s*([\]}])/g, '$1');
+
+  // Remove control characters (keep \n \t \r)
+  extracted = extracted.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 
   try {
-    return JSON.parse(cleaned);
-  } catch (parseError) {
-    // Last resort: try fixing common issues
-    try {
-      // Remove control characters except newline and tab
-      const sanitized = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
-      return JSON.parse(sanitized);
-    } catch {
-      throw new Error(
-        `Failed to parse JSON from ${stageName}. Extracted: ${extracted.substring(0, 300)}`
-      );
-    }
+    const parsed = JSON.parse(extracted);
+    console.log(`[${stageName}] Balanced extraction + clean succeeded`);
+    return parsed;
+  } catch (parseErr) {
+    console.error(`[${stageName}] All parse strategies failed. Last attempt raw: ${extracted.substring(0, 300)}`);
+    throw new Error(
+      `Could not parse JSON from ${stageName}. ` +
+      `Extracted (first 200 chars): ${extracted.substring(0, 200)}`
+    );
   }
 }
 
 /**
- * Create a Gemma 4 model instance with JSON-forced output.
- * Uses responseMimeType to ensure the model returns valid JSON.
+ * Call Gemma 4 multimodal model — image BEFORE text.
+ * No responseMimeType (Gemma 4 does not support JSON mode).
+ * Relies on prompt engineering + robust parser instead.
  */
-function createGemmaModel() {
-  return genAI.getGenerativeModel({
-    model: 'gemma-4-26b-a4b-it',
-    systemInstruction:
-      'You are an expert educational AI assistant. You MUST respond with valid JSON only. Do NOT include any markdown formatting, code blocks, backticks, explanations, or text outside the JSON structure.',
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096,
-    },
-  });
-}
-
-/**
- * Call Gemma 4 multimodal model with text + image.
- * Image MUST come before text for multimodal models.
- * Uses responseMimeType to force valid JSON output.
- */
-async function callGemma4(prompt: string, image: string, stageName: string, retries = 2): Promise<string> {
-  const model = createGemmaModel();
+async function callGemma4(prompt: string, image: string, stageName: string, retries = 1): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: 'gemma-4-26b-a4b-it' });
   const { mimeType, data } = extractBase64(image);
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       console.log(`[${stageName}] API call attempt ${attempt + 1}/${retries + 1}...`);
 
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { inlineData: { mimeType, data } },
-              { text: prompt },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-        },
-      });
+      const result = await model.generateContent([
+        { inlineData: { mimeType, data } },
+        { text: prompt },
+      ]);
 
-      const response = result.response;
-      const text = response.text();
-
+      const text = result.response.text();
       if (!text || text.trim().length === 0) {
-        throw new Error(`Empty response from Gemma 4 at ${stageName}`);
+        throw new Error(`Empty response from model at ${stageName}`);
       }
 
-      console.log(`[${stageName}] Success! Response length: ${text.length} chars`);
+      console.log(`[${stageName}] Got response: ${text.length} chars`);
       return text;
     } catch (error: unknown) {
-      const err = error as Error & { status?: number; message?: string };
-      const statusCode = err.status || 0;
-      const isRetryable = statusCode === 500 || statusCode === 503 || statusCode === 429;
+      const err = error as Error & { status?: number };
+      const status = err.status || 0;
+      console.error(`[${stageName}] Attempt ${attempt + 1} failed: HTTP ${status || 'N/A'} — ${err.message?.substring(0, 200)}`);
 
-      console.error(
-        `[${stageName}] Attempt ${attempt + 1} failed:`,
-        statusCode ? `HTTP ${statusCode}` : '',
-        err.message?.substring(0, 200)
-      );
-
-      if (attempt < retries && isRetryable) {
-        const delay = Math.pow(2, attempt) * 2000;
-        console.warn(`[${stageName}] Retry in ${delay}ms...`);
-        await new Promise((r) => setTimeout(r, delay));
+      if (attempt < retries && (status === 500 || status === 503 || status === 429)) {
+        await new Promise((r) => setTimeout(r, 3000));
         continue;
       }
-
-      // If responseMimeType causes issues, try without it as fallback
-      if (attempt === retries && err.message?.includes('responseMimeType')) {
-        console.warn(`[${stageName}] responseMimeType not supported, retrying without it...`);
-        try {
-          const fallbackResult = await model.generateContent([
-            { inlineData: { mimeType, data } },
-            { text: prompt },
-          ]);
-          const fallbackText = fallbackResult.response.text();
-          if (fallbackText) {
-            console.log(`[${stageName}] Fallback (no responseMimeType) succeeded: ${fallbackText.length} chars`);
-            return fallbackText;
-          }
-        } catch (fallbackErr) {
-          console.error(`[${stageName}] Fallback also failed:`, fallbackErr);
-        }
-      }
-
       throw error;
     }
   }
-
   throw new Error(`Max retries exceeded for ${stageName}`);
 }
 
 /**
  * STEP 1: analyze_content()
- * Uses Gemma 4 multimodal vision to extract key concepts, topics,
- * and learning objectives from the textbook page image.
+ * Uses Gemma 4 multimodal vision to extract key concepts from textbook image.
  */
 async function analyzeContent(image: string, language: string) {
-  const prompt = `Analyze this textbook page image thoroughly. Extract and return a JSON object with these fields:
+  const prompt = `You are an expert educational content analyzer. Analyze this textbook page image and return a JSON object.
 
-1. "topics": array of main topics covered (strings)
-2. "keyConcepts": array of key concepts and terminology (strings)
-3. "learningObjectives": array of what a student should learn from this page (strings)
-4. "contentSummary": a brief summary of the page content (string)
-5. "difficultyIndicators": object with "estimatedLevel" ("beginner", "intermediate", or "advanced") and "reasoning" (string)
-6. "contentSegments": array of specific content segments that could be used for quiz questions, each with "segment" (string) and "potentialQuestionType" (one of: "mcq", "true_false", "fill_blank", "short_answer")
+IMPORTANT: Your entire response must be ONLY a valid JSON object. No explanations, no markdown, no text before or after the JSON.
 
-Analyze ALL content including text, diagrams, tables, and mathematical expressions.
-Respond in ${language} for topics and concepts, but keep JSON keys in English.`;
+Example format:
+{
+  "topics": ["Topic 1", "Topic 2"],
+  "keyConcepts": ["concept1", "concept2"],
+  "learningObjectives": ["objective1", "objective2"],
+  "contentSummary": "Brief summary here",
+  "difficultyIndicators": {
+    "estimatedLevel": "beginner",
+    "reasoning": "reason here"
+  },
+  "contentSegments": [
+    {"segment": "text segment", "potentialQuestionType": "mcq"}
+  ]
+}
+
+Fields to extract:
+1. "topics": array of main topics covered
+2. "keyConcepts": array of key concepts and terminology
+3. "learningObjectives": array of what a student should learn
+4. "contentSummary": brief summary of the page content
+5. "difficultyIndicators": object with "estimatedLevel" (beginner/intermediate/advanced) and "reasoning"
+6. "contentSegments": array of segments with "segment" text and "potentialQuestionType" (mcq/true_false/fill_blank/short_answer)
+
+Analyze ALL content: text, diagrams, tables, math.
+Topics and concepts in ${language}, JSON keys in English.
+Return ONLY the JSON object, nothing else.`;
 
   const content = await callGemma4(prompt, image, 'analyze_content');
-  return parseJSONResponse(content, 'analyze_content') as Record<string, unknown>;
+  return extractJSON(content, 'analyze_content') as Record<string, unknown>;
 }
 
 /**
  * STEP 2: generate_question()
- * Uses the content analysis from Step 1 to generate structured quiz questions.
- * Each question includes an explicit difficulty rating for adaptive engine use.
+ * Uses content analysis to generate structured quiz questions.
  */
 async function generateQuestions(
   image: string,
@@ -327,92 +286,117 @@ async function generateQuestions(
   questionTypes: string[],
   language: string
 ) {
-  const difficultyGuide: Record<string, string> = {
-    beginner: 'Basic recall and understanding questions. Use simple vocabulary.',
-    intermediate: 'Application and analysis questions. Require connecting concepts.',
-    advanced: 'Critical thinking and evaluation questions. Require deep understanding and reasoning.',
-  };
-
-  const typeGuide: Record<string, string> = {
-    mcq: 'Multiple Choice Questions (with 4 options labeled A-D)',
-    true_false: 'True or False questions',
-    fill_blank: 'Fill in the Blank questions',
-    short_answer: 'Short Answer questions (requiring 1-2 sentences)',
+  const difficultyDescriptions: Record<string, string> = {
+    beginner: 'Basic recall and understanding. Simple vocabulary.',
+    intermediate: 'Application and analysis. Connect concepts.',
+    advanced: 'Critical thinking and evaluation. Deep reasoning.',
   };
 
   const typeDescriptions = questionTypes
-    .map((t) => typeGuide[t] || t)
+    .map((t) => {
+      const map: Record<string, string> = {
+        mcq: 'MCQ (4 options)',
+        true_false: 'True/False',
+        fill_blank: 'Fill in the Blank',
+        short_answer: 'Short Answer (1-2 sentences)',
+      };
+      return map[t] || t;
+    })
     .join(', ');
 
-  const prompt = `I have already analyzed this textbook page content.
+  const prompt = `You are an expert quiz creator. I have analyzed a textbook page:
 
-CONTENT ANALYSIS:
 ${JSON.stringify(contentAnalysis, null, 2)}
 
-Now generate exactly ${numQuestions} quiz questions based on this analysis.
+Generate exactly ${numQuestions} quiz questions.
+
+IMPORTANT: Return ONLY a valid JSON array. No explanations, no markdown, no text before/after.
+
+Example:
+[
+  {
+    "type": "mcq",
+    "id": 1,
+    "question": "What is X?",
+    "options": ["A", "B", "C", "D"],
+    "correctAnswer": 0,
+    "explanation": "Because...",
+    "difficultyRating": "easy",
+    "topicTag": "topic name"
+  }
+]
 
 Requirements:
-- Use these question types: ${typeDescriptions}
-- Base difficulty: ${difficulty} — ${difficultyGuide[difficulty] || difficultyGuide.intermediate}
-- Generate questions in ${language}
-- For each question, provide a clear explanation
-- Include a "difficultyRating" field for each question with one of: "easy", "medium", "hard"
-  - Mix difficulty levels: roughly 30% easy, 40% medium, 30% hard
-- Include a "topicTag" field for each question identifying which topic from the analysis it relates to
+- Question types: ${typeDescriptions}
+- Difficulty: ${difficulty} — ${difficultyDescriptions[difficulty] || difficultyDescriptions.intermediate}
+- Language: ${language}
+- Each question needs: explanation, difficultyRating (easy/medium/hard), topicTag
+- Mix difficulty: ~30% easy, 40% medium, 30% hard
+- correctAnswer for MCQ = 0-based index of correct option
+- IDs start from 1
 
-Return a JSON array with this structure:
-- For MCQ: {"type":"mcq","id":NUMBER,"question":"...","options":["A","B","C","D"],"correctAnswer":INDEX,"explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
-- For True/False: {"type":"true_false","id":NUMBER,"question":"...","correctAnswer":true/false,"explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
-- For Fill-in-blank: {"type":"fill_blank","id":NUMBER,"question":"...with _____ blank","correctAnswer":"the answer","explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
-- For Short Answer: {"type":"short_answer","id":NUMBER,"question":"...","correctAnswer":"expected answer","explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
+Question type formats:
+- MCQ: {"type":"mcq","id":N,"question":"...","options":["A","B","C","D"],"correctAnswer":INDEX,"explanation":"...","difficultyRating":"easy|medium|hard","topicTag":"..."}
+- True/False: {"type":"true_false","id":N,"question":"...","correctAnswer":true/false,"explanation":"...","difficultyRating":"...","topicTag":"..."}
+- Fill Blank: {"type":"fill_blank","id":N,"question":"...with _____ blank","correctAnswer":"answer","explanation":"...","difficultyRating":"...","topicTag":"..."}
+- Short Answer: {"type":"short_answer","id":N,"question":"...","correctAnswer":"expected answer","explanation":"...","difficultyRating":"...","topicTag":"..."}
 
-The correctAnswer for MCQ must be the 0-based index of the correct option.
-Start IDs from 1 and increment.`;
+Return ONLY the JSON array.`;
 
   const content = await callGemma4(prompt, image, 'generate_question');
-  const parsed = parseJSONResponse(content, 'generate_question');
+  const parsed = extractJSON(content, 'generate_question');
 
-  // Ensure we always return an array
+  // Normalize: model might wrap in object
   if (Array.isArray(parsed)) return parsed as QuizQuestion[];
   if (parsed && typeof parsed === 'object' && 'questions' in parsed) {
     return (parsed as { questions: QuizQuestion[] }).questions;
   }
-  throw new Error('generate_question did not return an array of questions');
+  if (parsed && typeof parsed === 'object' && 'results' in parsed) {
+    return (parsed as { results: QuizQuestion[] }).results;
+  }
+  throw new Error('generate_question did not return a questions array');
 }
 
 /**
  * STEP 3: validate_question()
- * Validates each generated question against the source content analysis
- * to ensure they are answerable and grounded in the material.
+ * Validates questions against source content.
  */
 async function validateQuestions(
   image: string,
   questions: QuizQuestion[],
   contentAnalysis: Record<string, unknown>
 ) {
-  const prompt = `I will show you a textbook page image, its content analysis, and generated quiz questions.
+  const prompt = `You are a quiz quality validator. Here is a textbook page analysis and quiz questions.
 
-CONTENT ANALYSIS:
+Content analysis:
 ${JSON.stringify(contentAnalysis, null, 2)}
 
-GENERATED QUESTIONS:
+Questions:
 ${JSON.stringify(questions, null, 2)}
 
-Validate each question. Return a JSON array of objects with:
-- "id": the question ID
-- "isValid": boolean (true if the question is answerable from the page content and not ambiguous)
-- "issues": array of strings describing any problems (empty if valid)
-- "suggestedFix": string with a fix suggestion if issues exist (empty string if valid)
+Validate each question. IMPORTANT: Return ONLY a valid JSON array. No explanations.
 
-Be strict but fair. A question is valid if a student who read the page could reasonably answer it.`;
+Example:
+[
+  {"id": 1, "isValid": true, "issues": [], "suggestedFix": ""},
+  {"id": 2, "isValid": false, "issues": ["Not answerable from page"], "suggestedFix": "Rewrite based on..."}
+]
+
+For each question:
+- "id": question ID
+- "isValid": true if answerable from page content
+- "issues": array of problem descriptions (empty if valid)
+- "suggestedFix": fix suggestion (empty if valid)
+
+Be strict but fair. Return ONLY the JSON array.`;
 
   const content = await callGemma4(prompt, image, 'validate_question');
-  const parsed = parseJSONResponse(content, 'validate_question');
+  const parsed = extractJSON(content, 'validate_question');
 
   if (Array.isArray(parsed)) {
     return parsed as { id: number; isValid: boolean; issues: string[]; suggestedFix: string }[];
   }
-  throw new Error('validate_question did not return an array of validation results');
+  throw new Error('validate_question did not return an array');
 }
 
 export async function POST(request: NextRequest) {
@@ -430,7 +414,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    // Check if API key is configured
     if (!process.env.GOOGLE_AI_API_KEY) {
       console.warn('[Pipeline] GOOGLE_AI_API_KEY not set, using sample fallback');
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
@@ -449,10 +432,10 @@ export async function POST(request: NextRequest) {
 
     try {
       // ============================================================
-      // STEP 1: analyze_content() — Extract key concepts from image
+      // STEP 1: analyze_content()
       // ============================================================
       pipelineStage = 'analyze_content';
-      console.log('[Pipeline] Step 1: analyze_content() — Extracting key concepts from image...');
+      console.log('[Pipeline] Step 1/3: analyze_content() — Analyzing textbook image...');
       contentAnalysis = await analyzeContent(image, language);
       console.log(
         '[Pipeline] Step 1 complete. Topics:',
@@ -460,17 +443,12 @@ export async function POST(request: NextRequest) {
       );
 
       // ============================================================
-      // STEP 2: generate_question() — Generate quiz questions
+      // STEP 2: generate_question()
       // ============================================================
       pipelineStage = 'generate_question';
-      console.log('[Pipeline] Step 2: generate_question() — Creating quiz questions...');
+      console.log('[Pipeline] Step 2/3: generate_question() — Creating quiz questions...');
       let questions: QuizQuestion[] = await generateQuestions(
-        image,
-        contentAnalysis,
-        difficulty,
-        numQuestions,
-        questionTypes,
-        language
+        image, contentAnalysis, difficulty, numQuestions, questionTypes, language
       );
       console.log(`[Pipeline] Step 2 complete. Generated ${questions.length} questions.`);
 
@@ -479,24 +457,22 @@ export async function POST(request: NextRequest) {
       }
 
       // ============================================================
-      // STEP 3: validate_question() — Validate against source
+      // STEP 3: validate_question()
       // ============================================================
       pipelineStage = 'validate_question';
-      console.log('[Pipeline] Step 3: validate_question() — Validating questions against source...');
+      console.log('[Pipeline] Step 3/3: validate_question() — Validating questions...');
       const validationResults = await validateQuestions(image, questions, contentAnalysis);
 
-      // Filter out invalid questions
       const validQuestions = questions.filter((q) => {
-        const validation = validationResults.find((v) => v.id === q.id);
-        return validation?.isValid !== false;
+        const v = validationResults.find((r) => r.id === q.id);
+        return v?.isValid !== false;
       });
 
       const removedCount = questions.length - validQuestions.length;
       console.log(
-        `[Pipeline] Step 3 complete. ${validQuestions.length}/${questions.length} questions passed validation.`
+        `[Pipeline] Step 3 complete. ${validQuestions.length}/${questions.length} passed validation.`
       );
 
-      // If validation removed too many questions, fall back to originals
       const finalQuestions = validQuestions.length >= 2 ? validQuestions : questions;
 
       return NextResponse.json({
@@ -517,21 +493,19 @@ export async function POST(request: NextRequest) {
       });
     } catch (aiError) {
       const err = aiError as Error;
-      console.error(`[Pipeline] AI pipeline error at stage '${pipelineStage}':`, err.message);
-      // Fall back to sample questions gracefully
+      console.error(`[Pipeline] AI error at '${pipelineStage}': ${err.message}`);
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
-      const sliced = shuffled.slice(0, numQuestions);
       return NextResponse.json({
-        questions: sliced,
+        questions: shuffled.slice(0, numQuestions),
         pipeline: {
           stages: ['analyze_content', 'generate_question', 'validate_question'],
-          error: `Pipeline failed at: ${pipelineStage} — ${err.message?.substring(0, 100)}`,
+          error: `Pipeline failed at: ${pipelineStage} — ${err.message?.substring(0, 120)}`,
           usedFallback: true,
         },
       });
     }
   } catch (error) {
-    console.error('[Pipeline] Generate quiz error:', error);
+    console.error('[Pipeline] Unhandled error:', error);
     return NextResponse.json(
       { error: 'Failed to generate quiz. Please try again.' },
       { status: 500 }
