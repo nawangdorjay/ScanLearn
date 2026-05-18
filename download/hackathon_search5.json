@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://www.kaggle.com/competitions/gemma-4-good-hackathon/discussion/698616",
+    "name": "The Gemma 4 Good Hackathon | Kaggle",
+    "snippet": "The Gemma 4 Good Hackathon. Harness the power of Gemma 4 to drive ... API key from AI Studio; Windows 11. Is this a known issue? Any ...",
+    "host_name": "www.kaggle.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.kaggle.com/competitions/gemma-4-good-hackathon/discussion/699047",
+    "name": "The Gemma 4 Good Hackathon - Kaggle",
+    "snippet": "The Gemma 4 Good Hackathon ... Harness the power of Gemma 4 to drive positive change and global impact. Join Hackathon.",
+    "host_name": "www.kaggle.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.kaggle.com/code/ziholee275/codecaregemma4",
+    "name": "CodecareGemma4 - Kaggle",
+    "snippet": "... gemma-4-good/transformers/gemma-4-it\", ] processor = None tokenizer ... key: _clip_score(value) for key, value in scores.items()} def ...",
+    "host_name": "www.kaggle.com",
+    "rank": 2,
+    "date": "May 13, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.kaggle.com",
+    "name": "Kaggle: The World's AI Proving Ground",
+    "snippet": "Bring frontier challenges to millions to reveal the true state-of-the-art. Key Features ... The Gemma 4 Good Hackathon. $200,000 · Featured Competition.",
+    "host_name": "www.kaggle.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.kaggle.com/datasets/nguyenductuandat/lalb-ais-port-congestion-62023-122025",
+    "name": "LA/LB Maritime Trajectory & AIS Dataset 2023-2025 - Kaggle",
+    "snippet": "After successfully engineering the first 3 feature sets (Static, Temporal, and Geospatial), I came across the Gemma 4 Good Hackathon. Seeing ...",
+    "host_name": "www.kaggle.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api",
+    "name": "Run Gemma with the Gemini API | Google AI for Developers",
+    "snippet": "The Gemini API provides hosted access to Gemma as a programming API you can use in application development or prototyping.",
+    "host_name": "ai.google.dev",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=yB7aliQtzSI",
+    "name": "How to Use Gemma 4 in VS Code with Free API Key (Full Guide)",
+    "snippet": "Unlock Pro AI Coding for $0! In this video, I'll show you how to set up Google's brand-new Gemma 4 model directly in VS Code completely ...",
+    "host_name": "www.youtube.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://openrouter.ai/google/gemma-4-31b-it:free",
+    "name": "Gemma 4 31B (free) - API Pricing & Providers - OpenRouter",
+    "snippet": "Gemma 4 31B Instruct is Google DeepMind's 30.7B dense multimodal model supporting text and image input with text output. $0 per million input tokens, ...",
+    "host_name": "openrouter.ai",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/LocalLLaMA/comments/1sepjll/gemma_4_31b_free_api_by_nvidia",
+    "name": "Gemma 4 31B free API by NVIDIA : r/LocalLLaMA - Reddit",
+    "snippet": "NVIDIA is providing free API key for Gemma4 31B model for free at 40rpm here : https://build.nvidia.com/google/gemma-4-31b-it demo…",
+    "host_name": "www.reddit.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=MZh7bxI5DgQ",
+    "name": "How to run Gemma 4 for free (even Free API calls) - YouTube",
+    "snippet": "... for complex logic. • ✓ API Integration: Getting your Google AI Studio key and running Gemma 4 via Python. Resources Mentioned: • Download ...",
+    "host_name": "www.youtube.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
