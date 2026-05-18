@@ -4,7 +4,14 @@ import type { QuizQuestion } from '@/lib/types';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
-const MODELS = [
+// Vision models (for Step 1 — needs to read image)
+const VISION_MODELS = [
+  'gemma-4-26b-a4b-it',
+  'gemini-2.0-flash',
+];
+
+// Text-only models (for Steps 2+3 — only needs text analysis, NOT image)
+const TEXT_MODELS = [
   'gemma-4-26b-a4b-it',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
@@ -32,34 +39,32 @@ function extractBase64(image: string): { mimeType: string; data: string } {
   return { mimeType: 'image/png', data: image };
 }
 
+/** Wait specified ms */
+const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 /**
- * Bulletproof JSON extractor — always uses balanced bracket matching.
- * Handles: text before JSON, text after JSON, code blocks, nested strings.
- * NEVER does direct JSON.parse on the full response.
+ * Bulletproof JSON extractor — balanced bracket matching only.
+ * NEVER does direct JSON.parse on raw response.
  */
 function extractJSON(raw: string, stage: string): unknown {
   if (!raw?.trim()) throw new Error(`Empty response from ${stage}`);
 
   const s = raw.trim();
-  // Log full response for debugging (first 1000 chars to see what model returns)
-  console.log(`[${stage}] FULL RAW RESPONSE START`);
-  console.log(s.substring(0, 1000));
-  console.log(`[${stage}] FULL RAW RESPONSE END (len=${s.length})`);
+  console.log(`[${stage}] RAW (${s.length} chars):`, s.substring(0, 800));
 
-  // Try to find a ```json``` or ``` code block first
+  // Try code block first
   const cb = s.match(/```(?:json)?\s*([\s\S]*?)```/);
   let target = cb ? cb[1].trim() : s;
 
-  // Find first { or [ using balanced matching (string-aware)
+  // Find first { or [
   let start = -1, open = '', close = '';
   for (let i = 0; i < target.length; i++) {
     if (target[i] === '{') { start = i; open = '{'; close = '}'; break; }
     if (target[i] === '[') { start = i; open = '['; close = ']'; break; }
   }
+  if (start === -1) throw new Error(`No JSON in ${stage}. Response: ${s.substring(0, 200)}`);
 
-  if (start === -1) throw new Error(`No JSON found in ${stage}. Response: ${s.substring(0, 200)}`);
-
-  // Walk balanced
+  // Balanced walk
   let depth = 0, inStr = false, esc = false, end = -1;
   for (let i = start; i < target.length; i++) {
     const c = target[i];
@@ -71,53 +76,82 @@ function extractJSON(raw: string, stage: string): unknown {
     if (c === close) depth--;
     if (depth === 0) { end = i + 1; break; }
   }
-
   if (end === -1) throw new Error(`Unbalanced JSON in ${stage}`);
 
-  let json = target.substring(start, end);
-  // Fix trailing commas
-  json = json.replace(/,\s*([\]}])/g, '$1');
-  // Remove control chars
-  json = json.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  let json = target.substring(start, end)
+    .replace(/,\s*([\]}])/g, '$1')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 
-  console.log(`[${stage}] EXTRACTED JSON (${json.length} chars):`, json.substring(0, 300));
+  console.log(`[${stage}] EXTRACTED (${json.length} chars):`, json.substring(0, 300));
 
-  try {
-    return JSON.parse(json);
-  } catch (e) {
-    // Absolute last resort: try fixing common issues
+  try { return JSON.parse(json); } catch {
     json = json.replace(/'/g, '"');
-    try { return JSON.parse(json); } catch { /* throw original */ }
-    throw new Error(`Parse failed in ${stage}. Extracted: ${json.substring(0, 200)}`);
-  }
-}
-
-async function callModel(prompt: string, image: string, stage: string): Promise<{ text: string; model: string }> {
-  const { mimeType, data } = extractBase64(image);
-
-  for (const modelName of MODELS) {
-    try {
-      console.log(`[${stage}] Trying ${modelName}...`);
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent([
-        { inlineData: { mimeType, data } },
-        { text: prompt },
-      ]);
-      const text = result.response.text();
-      if (!text?.trim()) { console.warn(`[${stage}] ${modelName} empty, next...`); continue; }
-      console.log(`[${stage}] ${modelName} OK (${text.length} chars)`);
-      return { text, model: modelName };
-    } catch (err: unknown) {
-      const e = err as Error & { status?: number };
-      console.error(`[${stage}] ${modelName} FAIL: HTTP ${e.status || '?'} ${e.message?.substring(0, 100)}`);
+    try { return JSON.parse(json); } catch {
+      throw new Error(`Parse failed in ${stage}. JSON: ${json.substring(0, 200)}`);
     }
   }
-  throw new Error(`All models failed for ${stage}`);
 }
 
-// ─── STEP 1: analyze_content() ───
+/**
+ * Call a vision model (image + text)
+ */
+async function callVisionModel(prompt: string, image: string, stage: string): Promise<{ text: string; model: string }> {
+  const { mimeType, data } = extractBase64(image);
+
+  for (const modelName of VISION_MODELS) {
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      try {
+        console.log(`[${stage}] ${modelName} attempt ${attempt + 1}...`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent([
+          { inlineData: { mimeType, data } },
+          { text: prompt },
+        ]);
+        const text = result.response.text();
+        if (!text?.trim()) { console.warn(`[${stage}] ${modelName} empty`); continue; }
+        console.log(`[${stage}] ${modelName} OK (${text.length} chars)`);
+        return { text, model: modelName };
+      } catch (err: unknown) {
+        const e = err as Error & { status?: number };
+        console.error(`[${stage}] ${modelName} FAIL: HTTP ${e.status || '?'} ${e.message?.substring(0, 80)}`);
+        if (e.status === 429 && attempt < 1) { console.warn(`[${stage}] Rate limited, waiting 5s...`); await wait(5000); }
+      }
+    }
+  }
+  throw new Error(`All vision models failed for ${stage}`);
+}
+
+/**
+ * Call a text-only model (NO image — much faster, separate rate limit pool)
+ */
+async function callTextModel(prompt: string, stage: string): Promise<{ text: string; model: string }> {
+  for (const modelName of TEXT_MODELS) {
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        console.log(`[${stage}] ${modelName} attempt ${attempt + 1}...`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        if (!text?.trim()) { console.warn(`[${stage}] ${modelName} empty`); continue; }
+        console.log(`[${stage}] ${modelName} OK (${text.length} chars)`);
+        return { text, model: modelName };
+      } catch (err: unknown) {
+        const e = err as Error & { status?: number };
+        console.error(`[${stage}] ${modelName} FAIL: HTTP ${e.status || '?'} ${e.message?.substring(0, 80)}`);
+        if ((e.status === 429 || e.status === 500) && attempt < 2) {
+          const delay = (attempt + 1) * 5000;
+          console.warn(`[${stage}] Waiting ${delay / 1000}s before retry...`);
+          await wait(delay);
+        }
+      }
+    }
+  }
+  throw new Error(`All text models failed for ${stage}`);
+}
+
+// ─── STEP 1: analyze_content() — VISION (reads image) ───
 async function analyzeContent(image: string, language: string) {
-  const prompt = `Analyze this textbook page image. Return ONLY a JSON object (no explanation, no markdown).
+  const prompt = `Analyze this textbook page image. Return ONLY a JSON object.
 
 {
   "topics": ["topic1", "topic2"],
@@ -125,18 +159,17 @@ async function analyzeContent(image: string, language: string) {
   "learningObjectives": ["objective1"],
   "contentSummary": "brief summary",
   "difficultyIndicators": {"estimatedLevel": "beginner|intermediate|advanced", "reasoning": "why"},
-  "contentSegments": [{"segment": "text", "potentialQuestionType": "mcq|true_false|fill_blank|short_answer"}]
+  "contentSegments": [{"segment": "text from page", "potentialQuestionType": "mcq|true_false|fill_blank|short_answer"}]
 }
 
-Analyze text, diagrams, tables, math. Topics in ${language}, JSON keys in English. ONLY the JSON.`;
+Analyze text, diagrams, tables, math. Topics in ${language}, JSON keys in English. ONLY JSON.`;
 
-  const { text, model } = await callModel(prompt, image, 'analyze_content');
+  const { text, model } = await callVisionModel(prompt, image, 'analyze_content');
   return { analysis: extractJSON(text, 'analyze_content') as Record<string, unknown>, model };
 }
 
-// ─── STEP 2+3: generate_question() + validate_question() — merged into ONE call ───
-async function generateAndValidateQuestions(
-  image: string,
+// ─── STEP 2+3: generate + validate — TEXT ONLY (no image needed!) ───
+async function generateAndValidate(
   contentAnalysis: Record<string, unknown>,
   difficulty: string,
   numQuestions: number,
@@ -150,30 +183,33 @@ async function generateAndValidateQuestions(
   };
   const types = questionTypes.map(t => ({ mcq: 'MCQ (4 options)', true_false: 'True/False', fill_blank: 'Fill Blank', short_answer: 'Short Answer' }[t] || t)).join(', ');
 
-  const prompt = `You are an expert quiz creator AND validator.
+  const prompt = `You are an expert quiz creator AND validator. I already analyzed a textbook page.
 
 CONTENT ANALYSIS:
 ${JSON.stringify(contentAnalysis, null, 2)}
 
-Generate exactly ${numQuestions} validated quiz questions. Return ONLY a JSON array. No explanation, no markdown.
+Generate exactly ${numQuestions} validated quiz questions. Return ONLY a JSON array.
 
 [
-  {"type":"mcq","id":1,"question":"What is X?","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Because...","difficultyRating":"easy","topicTag":"topic","isValid":true},
-  {"type":"true_false","id":2,"question":"Statement?","correctAnswer":true,"explanation":"...","difficultyRating":"medium","topicTag":"topic","isValid":true}
+  {"type":"mcq","id":1,"question":"What is X?","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Because...","difficultyRating":"easy","topicTag":"topic","isValid":true}
 ]
 
 Rules:
 - Types: ${types}
 - Difficulty: ${difficulty} (${diffDesc[difficulty] || diffDesc.intermediate})
 - Language: ${language}
-- Each question MUST have: explanation, difficultyRating (easy/medium/hard), topicTag, isValid (boolean)
-- isValid = true only if answerable from the page content
-- Mix difficulty: ~30% easy, 40% medium, 30% hard
+- Each needs: explanation, difficultyRating (easy/medium/hard), topicTag, isValid
+- isValid = true only if answerable from the content analysis
+- Mix: ~30% easy, 40% medium, 30% hard
 - MCQ correctAnswer = 0-based index. IDs from 1.
-- Only include questions where isValid is true
+- Only include isValid=true questions
 Return ONLY the JSON array.`;
 
-  const { text } = await callModel(prompt, image, 'generate_validate');
+  // Add 3s delay between Step 1 and Step 2 to avoid rate limits
+  console.log('[generate_validate] Waiting 3s to avoid rate limit...');
+  await wait(3000);
+
+  const { text } = await callTextModel(prompt, 'generate_validate');
   const parsed = extractJSON(text, 'generate_validate');
 
   let questions: QuizQuestion[];
@@ -188,16 +224,12 @@ Return ONLY the JSON array.`;
     }
     if (!questions) throw new Error('No questions array found');
   } else {
-    throw new Error('Unexpected response format');
+    throw new Error('Unexpected format');
   }
 
-  // Filter to only valid questions, strip isValid field
-  const validQuestions = questions.filter(q => {
-    const anyQ = q as Record<string, unknown>;
-    return anyQ.isValid !== false;
-  }).map(({ isValid: _iv, ...rest }: Record<string, unknown>) => rest as unknown as QuizQuestion);
-
-  return { questions: validQuestions, totalGenerated: questions.length };
+  // Strip isValid field from output
+  const clean = questions.map(({ isValid: _iv, ...rest }: Record<string, unknown>) => rest as unknown as QuizQuestion);
+  return { questions: clean, totalGenerated: questions.length };
 }
 
 // ─── POST ───
@@ -217,21 +249,21 @@ export async function POST(request: NextRequest) {
     }
 
     let pipelineStage = 'init';
-    let usedModel = 'none';
+    let usedModels: string[] = [];
 
     try {
-      // STEP 1: analyze_content
+      // STEP 1: analyze_content — VISION (reads image with Gemma 4)
       pipelineStage = 'analyze_content';
-      console.log(`[Pipeline] v2 deploy | Step 1/2: analyze_content`);
-      const { analysis, model } = await analyzeContent(image, language);
-      usedModel = model;
-      console.log(`[Pipeline] Step 1 OK via ${model}`);
+      console.log(`[Pipeline] v3 | Step 1: analyze_content (vision)`);
+      const { analysis, model: m1 } = await analyzeContent(image, language);
+      usedModels.push(m1);
+      console.log(`[Pipeline] Step 1 OK via ${m1}`);
 
-      // STEP 2+3: generate + validate (merged)
+      // STEP 2+3: generate + validate — TEXT ONLY (no image, separate rate limit pool)
       pipelineStage = 'generate_validate';
-      console.log(`[Pipeline] Step 2/2: generate_and_validate`);
-      const { questions, totalGenerated } = await generateAndValidateQuestions(image, analysis, difficulty, numQuestions, questionTypes, language);
-      console.log(`[Pipeline] Step 2 OK. ${questions.length}/${totalGenerated} valid questions.`);
+      console.log(`[Pipeline] Step 2: generate_and_validate (text-only)`);
+      const { questions, totalGenerated } = await generateAndValidate(analysis, difficulty, numQuestions, questionTypes, language);
+      console.log(`[Pipeline] Step 2 OK. ${questions.length}/${totalGenerated} questions.`);
 
       if (!questions.length) throw new Error('No valid questions generated');
 
@@ -239,7 +271,7 @@ export async function POST(request: NextRequest) {
         questions,
         pipeline: {
           stages: ['analyze_content', 'generate_question', 'validate_question'],
-          model: usedModel,
+          models: usedModels,
           contentAnalysis: {
             topics: analysis.topics,
             keyConcepts: analysis.keyConcepts,
@@ -250,7 +282,7 @@ export async function POST(request: NextRequest) {
       });
     } catch (aiError) {
       const err = aiError as Error;
-      console.error(`[Pipeline] v2 FAIL at ${pipelineStage}: ${err.message}`);
+      console.error(`[Pipeline] v3 FAIL at ${pipelineStage}: ${err.message}`);
       const shuffled = [...sampleQuestions].sort(() => Math.random() - 0.5);
       return NextResponse.json({
         questions: shuffled.slice(0, numQuestions),
