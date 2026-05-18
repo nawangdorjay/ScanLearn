@@ -163,7 +163,7 @@ ScanLearn directly addresses the Future of Education mission by:
 ## Submission Links
 
 - **Kaggle Writeup:** [Link]
-- **Video:** [Link]
+- **Video:** [https://youtu.be/Qm1KiROWwAQ](https://youtu.be/Qm1KiROWwAQ)
 - **Live Demo:** [Link]
 - **Code Repository:** [https://github.com/nawangdorjay/ScanLearn](https://github.com/nawangdorjay/ScanLearn)
 
