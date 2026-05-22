@@ -164,7 +164,7 @@ ScanLearn directly addresses the Future of Education mission by:
 
 - **Kaggle Writeup:** [Link]
 - **Video:** [https://youtu.be/Qm1KiROWwAQ](https://youtu.be/Qm1KiROWwAQ)
-- **Live Demo:** [Link]
+- **Live Demo:** [scan-learn.vercel.app]
 - **Code Repository:** [https://github.com/nawangdorjay/ScanLearn](https://github.com/nawangdorjay/ScanLearn)
 
 ## License
